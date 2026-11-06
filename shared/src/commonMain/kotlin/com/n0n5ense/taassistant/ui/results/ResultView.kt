@@ -5,7 +5,7 @@ import com.n0n5ense.taassistant.core.model.Judge
 import com.n0n5ense.taassistant.core.model.StudentId
 import com.n0n5ense.taassistant.core.model.TestResult
 
-/** 結果タブの絞り込み */
+/** 詳細タブの絞り込み */
 enum class ResultFilter(val label: String, val accepts: (TestResult) -> Boolean) {
     All("すべて", { true }),
     NeedsReview("要確認", { it.judge in Judge.needsReview }),
@@ -19,7 +19,7 @@ data class TaskGroupKey(val studentId: StudentId, val taskName: TaskName?)
 
 val TestResult.taskGroupKey: TaskGroupKey get() = TaskGroupKey(studentId, taskName)
 
-/** 結果タブの絞り込みと、学生・課題ごとの開閉 */
+/** 詳細タブの絞り込みと、学生・課題ごとの開閉 */
 data class ResultViewState(
     val filter: ResultFilter = ResultFilter.All,
     val query: String = "",

@@ -31,6 +31,7 @@ import com.n0n5ense.taassistant.ui.common.OverflowMenu
 import com.n0n5ense.taassistant.ui.common.PathField
 import com.n0n5ense.taassistant.ui.common.RadioRow
 import com.n0n5ense.taassistant.ui.common.SectionLabel
+import com.n0n5ense.taassistant.ui.log.LogCounts
 
 @Composable
 internal fun SetupPanel(
@@ -38,6 +39,7 @@ internal fun SetupPanel(
     viewModel: AppViewModel,
     onEditConfig: () -> Unit,
     configEditorDirty: Boolean = false,
+    onOpenLog: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val setup = state.setup
@@ -132,6 +134,11 @@ internal fun SetupPanel(
                 OutlinedButton(onClick = viewModel::cancel, enabled = state.isRunning) {
                     Text("中止")
                 }
+            }
+            // 実行のログ (別の画面で開く)
+            OutlinedButton(onClick = onOpenLog, modifier = Modifier.fillMaxWidth()) {
+                Text("ログ", modifier = Modifier.padding(end = 12.dp))
+                LogCounts(state.logs)
             }
             OutlinedButton(onClick = viewModel::export, enabled = state.canExport, modifier = Modifier.fillMaxWidth()) {
                 Text("結果ファイルを出力")

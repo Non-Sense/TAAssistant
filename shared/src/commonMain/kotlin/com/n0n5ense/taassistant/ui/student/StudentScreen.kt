@@ -80,7 +80,7 @@ import com.n0n5ense.taassistant.ui.common.interventionsByStudent
  * 学生のページ。課題ごとの結果と、提出ファイルの一覧・中身を表示する。
  *
  * @param results 手動判定・課題の割り当てを反映した全員分の結果
- * @param onOpenResult 結果を選んで、結果タブで開く
+ * @param onOpenResult 結果を選んで、詳細タブで開く
  * @param onPrevious / [onNext] 前後の学生のページに切り替える (いなければ null)
  */
 @Composable

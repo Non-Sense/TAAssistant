@@ -26,9 +26,11 @@ import com.n0n5ense.taassistant.platform.PlatformServices
 import com.n0n5ense.taassistant.platform.createPlatformServices
 import com.n0n5ense.taassistant.ui.configeditor.ConfigEditorPanel
 import com.n0n5ense.taassistant.ui.configeditor.ConfigEditorViewModel
+import com.n0n5ense.taassistant.ui.log.LogScreen
 import com.n0n5ense.taassistant.ui.main.AppViewModel
 import com.n0n5ense.taassistant.ui.main.MainArea
 import com.n0n5ense.taassistant.ui.main.MainTab
+import com.n0n5ense.taassistant.ui.main.RunStatus
 import com.n0n5ense.taassistant.ui.main.SetupPanel
 import com.n0n5ense.taassistant.ui.main.WelcomeScreen
 import com.n0n5ense.taassistant.ui.student.StudentScreen
@@ -42,6 +44,9 @@ private sealed interface Screen {
 
     /** コンフィグエディタ (採点画面から開いて、戻る) */
     data object ConfigEditor : Screen
+
+    /** 実行のログ */
+    data object Log : Screen
 
     /** 学生のページ (課題ごとの結果と提出ファイル) */
     data class Student(val id: StudentId) : Screen
@@ -63,7 +68,13 @@ fun App(
     // エディタの ViewModel はアプリ全体で1つ (採点画面に戻っても、編集中の内容を残す)
     val editorViewModel = viewModel { ConfigEditorViewModel(services) }
     val editorState by editorViewModel.state.collectAsStateWithLifecycle()
-    var tab by remember { mutableStateOf(MainTab.Results) }
+    var tab by remember { mutableStateOf(MainTab.Summary) }
+    // 採点が終わったらサマリーを表示する。
+    // 画面遷移で作り直される採点画面の中ではなくここで行う (学生のページなどから戻るたびに切り替わらないように)
+    val statusKind = state.status::class
+    LaunchedEffect(statusKind) {
+        if (state.status == RunStatus.Finished && state.results.isNotEmpty()) tab = MainTab.Summary
+    }
 
     val projectName = state.project?.name
     LaunchedEffect(projectName) {
@@ -108,6 +119,7 @@ fun App(
                                 viewModel = appViewModel,
                                 configEditorDirty = editorState.isDirty,
                                 onEditConfig = { open(Screen.ConfigEditor) },
+                                onOpenLog = { open(Screen.Log) },
                                 modifier = Modifier.width(380.dp).fillMaxHeight(),
                             )
                             VerticalDivider()
@@ -117,6 +129,7 @@ fun App(
                                 tab = tab,
                                 onTabChange = { tab = it },
                                 onOpenStudent = { open(Screen.Student(it)) },
+                                onOpenLog = { open(Screen.Log) },
                                 modifier = Modifier.weight(1f).fillMaxHeight(),
                             )
                         }
@@ -134,6 +147,9 @@ fun App(
                             },
                             onBack = back,
                         )
+                    }
+                    entry<Screen.Log> {
+                        LogScreen(state, onBack = back)
                     }
                     entry<Screen.Student> { key ->
                         val outcome = state.outcome
@@ -157,7 +173,7 @@ fun App(
                             onBack = back,
                             onOpenResult = { id ->
                                 appViewModel.select(id)
-                                tab = MainTab.Results
+                                tab = MainTab.Details
                                 back()
                             },
                             onPrevious = students.getOrNull(index - 1)?.let { { switchTo(it) } },

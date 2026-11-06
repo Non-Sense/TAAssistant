@@ -22,6 +22,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -45,9 +46,9 @@ import com.n0n5ense.taassistant.ui.results.ResultsPanel
 import com.n0n5ense.taassistant.ui.results.SummaryPanel
 
 internal enum class MainTab(val label: String) {
-    Results("結果"),
+    /** 最初に表示する画面 */
     Summary("サマリー"),
-    Log("ログ"),
+    Details("詳細"),
 }
 
 @Composable
@@ -58,17 +59,10 @@ internal fun MainArea(
     onTabChange: (MainTab) -> Unit,
     modifier: Modifier = Modifier,
     onOpenStudent: (StudentId) -> Unit = {},
+    onOpenLog: () -> Unit = {},
 ) {
-    val statusKind = state.status::class
-    LaunchedEffect(statusKind) {
-        when (state.status) {
-            is RunStatus.Running, is RunStatus.Failed -> onTabChange(MainTab.Log)
-            RunStatus.Finished -> if (state.results.isNotEmpty()) onTabChange(MainTab.Results)
-            else -> Unit
-        }
-    }
     Column(modifier) {
-        StatusBar(state, Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp))
+        StatusBar(state, onOpenLog, Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp))
         PrimaryTabRow(selectedTabIndex = tab.ordinal) {
             MainTab.entries.forEach { t ->
                 Tab(
@@ -83,16 +77,15 @@ internal fun MainArea(
         Box(Modifier.weight(1f).fillMaxWidth()) {
             tabStates.SaveableStateProvider(tab.name) {
                 when (tab) {
-                    MainTab.Results -> ResultsPanel(state, viewModel, onOpenStudent = onOpenStudent)
+                    MainTab.Details -> ResultsPanel(state, viewModel, onOpenStudent = onOpenStudent)
                     MainTab.Summary -> SummaryPanel(
                         state,
                         onOpenResult = { id ->
                             viewModel.select(id)
-                            onTabChange(MainTab.Results)
+                            onTabChange(MainTab.Details)
                         },
                         onOpenStudent = onOpenStudent,
                     )
-                    MainTab.Log -> LogPanel(state.logs)
                 }
             }
         }
@@ -100,7 +93,7 @@ internal fun MainArea(
 }
 
 @Composable
-private fun StatusBar(state: UiState, modifier: Modifier = Modifier) {
+private fun StatusBar(state: UiState, onOpenLog: () -> Unit, modifier: Modifier = Modifier) {
     Column(modifier, verticalArrangement = Arrangement.spacedBy(6.dp)) {
         when (val status = state.status) {
             RunStatus.Idle -> Text("設定を入力して「実行」を押してください", style = MaterialTheme.typography.bodyMedium)
@@ -133,61 +126,18 @@ private fun StatusBar(state: UiState, modifier: Modifier = Modifier) {
                 }
             }
             RunStatus.Cancelled -> Text("中止しました", style = MaterialTheme.typography.bodyMedium)
-            is RunStatus.Failed -> Text(
-                "エラー: ${status.message}",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.error,
-                maxLines = 3,
-                overflow = TextOverflow.Ellipsis,
-            )
+            is RunStatus.Failed -> Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    "エラー: ${status.message}",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.error,
+                    maxLines = 3,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f),
+                )
+                TextButton(onClick = onOpenLog) { Text("ログを見る") }
+            }
         }
     }
 }
 
-@Composable
-private fun LogPanel(logs: List<LogLine>, modifier: Modifier = Modifier) {
-    val listState = rememberLazyListState()
-    // 行が増えたときだけ末尾へスクロールする (タブに戻ってきたときは位置を残す)
-    var scrolledSize by rememberSaveable { mutableStateOf(-1) }
-    LaunchedEffect(logs.size) {
-        if (logs.size == scrolledSize) return@LaunchedEffect
-        scrolledSize = logs.size
-        if (logs.isNotEmpty()) listState.scrollToItem(logs.lastIndex)
-    }
-    if (logs.isEmpty()) {
-        Box(modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            Text("ログはありません", color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
-        return
-    }
-    // 長い行は折り返さず、横にスクロールする
-    val horizontal = rememberScrollState()
-    Column(modifier.fillMaxSize()) {
-        BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
-            val viewportWidth = maxWidth
-            SelectionContainer(Modifier.fillMaxSize().horizontalScroll(horizontal)) {
-                LazyColumn(
-                    state = listState,
-                    modifier = Modifier.fillMaxHeight().widthIn(min = viewportWidth),
-                    contentPadding = PaddingValues(12.dp),
-                ) {
-                    itemsIndexed(logs) { _, line ->
-                        Text(
-                            line.message,
-                            fontFamily = FontFamily.Monospace,
-                            fontSize = 12.sp,
-                            softWrap = false,
-                            color = when (line.level) {
-                                LogLevel.Info -> MaterialTheme.colorScheme.onSurface
-                                LogLevel.Warning -> MaterialTheme.colorScheme.tertiary
-                                LogLevel.Error -> MaterialTheme.colorScheme.error
-                            },
-                        )
-                    }
-                }
-            }
-            AppVerticalScrollbar(listState, Modifier.align(Alignment.CenterEnd).fillMaxHeight())
-        }
-        AppHorizontalScrollbar(horizontal, Modifier.fillMaxWidth())
-    }
-}

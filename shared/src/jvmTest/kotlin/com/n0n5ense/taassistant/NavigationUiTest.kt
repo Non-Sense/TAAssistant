@@ -4,11 +4,13 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.SemanticsNodeInteractionsProvider
+import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performKeyInput
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.pressKey
 import androidx.compose.ui.test.runComposeUiTest
 import androidx.lifecycle.ViewModelStore
@@ -156,7 +158,10 @@ class NavigationUiTest {
             }
         }
 
-        // 結果タブの学生の見出しに、学生のページを開くボタンがある
+        // 最初はサマリーを表示している
+        waitUntil(timeoutMillis = 10_000) { exists(hasText("手動介入")) }
+        onNode(hasText("詳細")).performClick()
+        // 詳細タブの学生の見出しに、学生のページを開くボタンがある
         val openStudent = hasContentDescription("学生のページ (提出ファイル)")
         waitUntil(timeoutMillis = 10_000) { onAllNodes(openStudent).fetchSemanticsNodes().size == 2 }
         // 選択中の結果 (学生1) の詳細から、学生のページを開く
@@ -176,7 +181,7 @@ class NavigationUiTest {
         onNode(hasText("次の学生")).performClick()
         waitUntil(timeoutMillis = 10_000) { exists(hasText("s2  学生2")) && exists(hasText("submit2.zip")) }
 
-        // テストケースの判定をクリックすると、結果タブでその結果を開く
+        // テストケースの判定をクリックすると、詳細タブでその結果を開く
         onNode(hasText("t1")).performClick()
         waitUntil(timeoutMillis = 10_000) { !exists(back) && exists(hasText("s2/sources/Main2.java")) }
 
@@ -243,5 +248,31 @@ class NavigationUiTest {
         waitUntil(timeoutMillis = 10_000) { renamed.isFile && exists(hasText("第1回 改")) }
         assertEquals("submissions", ProjectCodec.decode(renamed.readBytes()).settings.rootDir)
         assertTrue(project.isFile, "元のファイルは残る")
+    }
+
+    @Test
+    fun opensLogScreen() = runComposeUiTest {
+        File(dir, "config.yaml").writeText("version: 2\ntasks:\n  課題1:\n    word: [課題1]\n")
+        val project = File(dir, "test.taa")
+        project.writeBytes(ProjectCodec.encode(ProjectFile(settings = ProjectSettings(configPath = "config.yaml"))))
+        val owner = object : ViewModelStoreOwner {
+            override val viewModelStore = ViewModelStore()
+        }
+        setContent {
+            CompositionLocalProvider(LocalViewModelStoreOwner provides owner) {
+                App(services(project.path))
+            }
+        }
+        // 実行ボタンの近くの「ログ」から開く
+        val logButton = hasText("ログ").and(hasClickAction())
+        waitUntil(timeoutMillis = 10_000) { exists(logButton) && exists(hasText("実行")) }
+        onNode(logButton).performScrollTo().performClick()
+        val back = hasContentDescription("採点画面に戻る (Esc)")
+        waitUntil(timeoutMillis = 10_000) { exists(back) && !exists(hasText("実行")) }
+        assertTrue(exists(hasText("プロジェクトを開きました", substring = true)))
+
+        // Esc で採点画面に戻る
+        onRoot().performKeyInput { pressKey(Key.Escape) }
+        waitUntil(timeoutMillis = 10_000) { !exists(back) && exists(hasText("実行")) }
     }
 }

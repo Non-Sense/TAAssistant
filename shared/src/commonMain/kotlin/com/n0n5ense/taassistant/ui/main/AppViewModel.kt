@@ -91,7 +91,7 @@ data class UiState(
     val assigningSource: String? = null,
     val selectedId: Int? = null,
     val export: ExportStatus? = null,
-    /** 結果タブの表示状態 (タブを切り替えても残す) */
+    /** 詳細タブの表示状態 (タブを切り替えても残す) */
     val resultView: ResultViewState = ResultViewState(),
 ) {
     val isRunning: Boolean get() = status is RunStatus.Running
