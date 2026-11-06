@@ -1,5 +1,24 @@
 package com.n0n5ense.taassistant.core
 
+import com.n0n5ense.taassistant.core.config.ConfigParser
+import com.n0n5ense.taassistant.core.config.SubmissionDirName
+import com.n0n5ense.taassistant.core.config.TaskName
+import com.n0n5ense.taassistant.core.config.TestCase
+import com.n0n5ense.taassistant.core.config.parseSubmissionDirName
+import com.n0n5ense.taassistant.core.grading.AutoJudge
+import com.n0n5ense.taassistant.core.grading.detectTasks
+import com.n0n5ense.taassistant.core.grading.parsePackageName
+import com.n0n5ense.taassistant.core.grading.splitArguments
+import com.n0n5ense.taassistant.core.model.CompileOutcome
+import com.n0n5ense.taassistant.core.model.Execution
+import com.n0n5ense.taassistant.core.model.Judge
+import com.n0n5ense.taassistant.core.model.SourceEncoding
+import com.n0n5ense.taassistant.core.model.SourceFile
+import com.n0n5ense.taassistant.core.model.Student
+import com.n0n5ense.taassistant.core.model.StudentId
+import com.n0n5ense.taassistant.core.model.TestResult
+import com.n0n5ense.taassistant.core.report.Csv
+import com.n0n5ense.taassistant.core.report.buildSummary
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull

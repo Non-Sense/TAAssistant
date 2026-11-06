@@ -20,6 +20,7 @@ kotlin {
             implementation(libs.androidx.lifecycle.runtimeCompose)
             implementation(libs.kotlinx.coroutinesCore)
             implementation(libs.kotlinx.serializationCore)
+            implementation(libs.kotlinx.serializationJson)
             implementation(libs.kaml)
         }
         jvmMain.dependencies {

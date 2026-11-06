@@ -1,7 +1,7 @@
 package com.n0n5ense.taassistant.platform
 
-import com.n0n5ense.taassistant.core.GradingToolkit
-import com.n0n5ense.taassistant.core.JvmGradingToolkit
+import com.n0n5ense.taassistant.core.grading.GradingToolkit
+import com.n0n5ense.taassistant.core.grading.JvmGradingToolkit
 import java.awt.Desktop
 import java.io.File
 import java.util.prefs.Preferences
@@ -64,6 +64,24 @@ private class JvmPlatformServices : PlatformServices {
 
     override fun parentDirectory(path: String): String? = File(path).absoluteFile.parentFile?.path
 
+    override fun relativeToFile(baseFile: String, path: String): String {
+        if (path.isBlank()) return path
+        val base = File(baseFile).absoluteFile.parentFile?.toPath()?.normalize() ?: return path
+        val target = runCatching { File(path).absoluteFile.toPath().normalize() }.getOrNull() ?: return path
+        if (!target.startsWith(base)) return path
+        return base.relativize(target).toString().replace(File.separatorChar, '/').ifEmpty { "." }
+    }
+
+    override fun resolveAgainstFile(baseFile: String, path: String): String {
+        if (path.isBlank()) return path
+        val file = File(path)
+        if (file.isAbsolute) return file.path
+        val base = File(baseFile).absoluteFile.parentFile ?: return path
+        return base.toPath().resolve(path).normalize().toString()
+    }
+
+    override fun fileExists(path: String): Boolean = File(path).isFile
+
     override fun openPath(path: String) {
         thread(isDaemon = true) {
             runCatching { Desktop.getDesktop().open(File(path)) }
@@ -95,4 +113,5 @@ private class PreferencesSettingsStore : SettingsStore {
     private val prefs = Preferences.userRoot().node("com/n0n5ense/taassistant")
     override fun get(key: String): String? = prefs.get(key, null)
     override fun put(key: String, value: String) = prefs.put(key, value)
+    override fun remove(key: String) = prefs.remove(key)
 }
