@@ -37,12 +37,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.n0n5ense.taassistant.core.grading.LogLevel
 import com.n0n5ense.taassistant.core.model.Judge
+import com.n0n5ense.taassistant.core.model.StudentId
 import com.n0n5ense.taassistant.ui.common.AppHorizontalScrollbar
 import com.n0n5ense.taassistant.ui.common.AppVerticalScrollbar
 import com.n0n5ense.taassistant.ui.common.JudgeBadge
-import com.n0n5ense.taassistant.ui.configeditor.ConfigEditorPanel
-import com.n0n5ense.taassistant.ui.configeditor.ConfigEditorState
-import com.n0n5ense.taassistant.ui.configeditor.ConfigEditorViewModel
 import com.n0n5ense.taassistant.ui.results.ResultsPanel
 import com.n0n5ense.taassistant.ui.results.SummaryPanel
 
@@ -50,18 +48,16 @@ internal enum class MainTab(val label: String) {
     Results("結果"),
     Summary("サマリー"),
     Log("ログ"),
-    ConfigEditor("コンフィグ編集"),
 }
 
 @Composable
 internal fun MainArea(
     state: UiState,
     viewModel: AppViewModel,
-    editorState: ConfigEditorState,
-    editorViewModel: ConfigEditorViewModel,
     tab: MainTab,
     onTabChange: (MainTab) -> Unit,
     modifier: Modifier = Modifier,
+    onOpenStudent: (StudentId) -> Unit = {},
 ) {
     val statusKind = state.status::class
     LaunchedEffect(statusKind) {
@@ -71,10 +67,6 @@ internal fun MainArea(
             else -> Unit
         }
     }
-    LaunchedEffect(tab) {
-        if (tab == MainTab.ConfigEditor) editorViewModel.openForEditing(state.setup.configPath)
-    }
-
     Column(modifier) {
         StatusBar(state, Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp))
         PrimaryTabRow(selectedTabIndex = tab.ordinal) {
@@ -82,7 +74,7 @@ internal fun MainArea(
                 Tab(
                     selected = tab == t,
                     onClick = { onTabChange(t) },
-                    text = { Text(if (t == MainTab.ConfigEditor && editorState.isDirty) "${t.label} ●" else t.label) },
+                    text = { Text(t.label) },
                 )
             }
         }
@@ -91,18 +83,16 @@ internal fun MainArea(
         Box(Modifier.weight(1f).fillMaxWidth()) {
             tabStates.SaveableStateProvider(tab.name) {
                 when (tab) {
-                    MainTab.Results -> ResultsPanel(state, viewModel)
-                    MainTab.Summary -> SummaryPanel(state, onOpenResult = { id ->
-                        viewModel.select(id)
-                        onTabChange(MainTab.Results)
-                    })
-                    MainTab.Log -> LogPanel(state.logs)
-                    MainTab.ConfigEditor -> ConfigEditorPanel(
-                        state = editorState,
-                        viewModel = editorViewModel,
-                        gradingConfigPath = state.setup.configPath,
-                        onUseForGrading = { path -> viewModel.updateSetup { it.copy(configPath = path) } },
+                    MainTab.Results -> ResultsPanel(state, viewModel, onOpenStudent = onOpenStudent)
+                    MainTab.Summary -> SummaryPanel(
+                        state,
+                        onOpenResult = { id ->
+                            viewModel.select(id)
+                            onTabChange(MainTab.Results)
+                        },
+                        onOpenStudent = onOpenStudent,
                     )
+                    MainTab.Log -> LogPanel(state.logs)
                 }
             }
         }

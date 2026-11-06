@@ -37,6 +37,7 @@ internal fun SetupPanel(
     state: UiState,
     viewModel: AppViewModel,
     onEditConfig: () -> Unit,
+    configEditorDirty: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
     val setup = state.setup
@@ -67,7 +68,10 @@ internal fun SetupPanel(
                 enabled = editable,
             )
             TextButton(onClick = onEditConfig, modifier = Modifier.padding(top = 0.dp)) {
-                Text(if (setup.configPath.isBlank()) "コンフィグを新規作成…" else "コンフィグを編集…")
+                Text(
+                    (if (setup.configPath.isBlank()) "コンフィグを新規作成…" else "コンフィグを編集…") +
+                        if (configEditorDirty) "  ● 未保存の変更あり" else "",
+                )
             }
             PathField(
                 label = "出力先ディレクトリ",
@@ -181,12 +185,32 @@ private fun ProjectHeader(state: UiState, viewModel: AppViewModel) {
             state.projectError?.let {
                 Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error)
             }
+            state.projectNotice?.let { notice ->
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        notice.message,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f),
+                    )
+                    notice.openPath?.let { path ->
+                        TextButton(onClick = { viewModel.openProject(path) }, enabled = !state.isRunning) { Text("開く") }
+                    }
+                    TextButton(onClick = viewModel::dismissProjectNotice) { Text("閉じる") }
+                }
+            }
         }
         OverflowMenu(
             "プロジェクト",
             listOf(
                 MenuEntry("新しいプロジェクト…", enabled = !state.isRunning, onClick = viewModel::newProject),
                 MenuEntry("プロジェクトを開く…", enabled = !state.isRunning, onClick = { viewModel.openProject() }),
+                MenuEntry("別名で保存…", enabled = !state.isRunning, onClick = viewModel::saveProjectAs),
+                MenuEntry("複製…", enabled = !state.isRunning, onClick = { viewModel.duplicateProject(includeResults = true) }),
+                MenuEntry("設定だけを複製…", enabled = !state.isRunning, onClick = { viewModel.duplicateProject(includeResults = false) }),
+                MenuEntry("フォルダを開く", onClick = viewModel::openProjectFolder),
                 MenuEntry("プロジェクトを閉じる", enabled = !state.isRunning, onClick = viewModel::closeProject),
             ),
         )

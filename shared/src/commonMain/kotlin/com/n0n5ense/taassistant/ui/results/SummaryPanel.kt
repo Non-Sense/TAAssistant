@@ -28,6 +28,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import com.n0n5ense.taassistant.core.model.StudentId
 import com.n0n5ense.taassistant.core.report.SummaryColumn
 import com.n0n5ense.taassistant.core.report.SummaryRow
 import com.n0n5ense.taassistant.core.report.buildSummary
@@ -46,7 +47,12 @@ private val ratioWidth = 90.dp
 private val statWidth = 96.dp
 
 @Composable
-internal fun SummaryPanel(state: UiState, onOpenResult: (Int) -> Unit, modifier: Modifier = Modifier) {
+internal fun SummaryPanel(
+    state: UiState,
+    onOpenResult: (Int) -> Unit,
+    modifier: Modifier = Modifier,
+    onOpenStudent: (StudentId) -> Unit = {},
+) {
     val outcome = state.outcome
     if (outcome == null || state.results.isEmpty()) {
         Box(modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -83,7 +89,13 @@ internal fun SummaryPanel(state: UiState, onOpenResult: (Int) -> Unit, modifier:
         Box(Modifier.weight(1f).fillMaxWidth()) {
             LazyColumn(Modifier.fillMaxSize(), state = listState) {
                 items(table.rows, key = { it.studentId.value }) { row ->
-                    SummaryRowView(row, interventions[row.studentId], table.columns, horizontal) { column -> openCell(row, column) }
+                    SummaryRowView(
+                        row = row,
+                        intervention = interventions[row.studentId],
+                        columns = table.columns,
+                        horizontal = horizontal,
+                        onOpenStudent = { onOpenStudent(row.studentId) },
+                    ) { column -> openCell(row, column) }
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
                 }
             }
@@ -91,7 +103,7 @@ internal fun SummaryPanel(state: UiState, onOpenResult: (Int) -> Unit, modifier:
         }
         AppHorizontalScrollbar(horizontal, Modifier.fillMaxWidth())
         Text(
-            "${table.rows.size} 人  ·  判定セルをクリックすると詳細を開きます",
+            "${table.rows.size} 人  ·  判定セルをクリックすると詳細を、学籍番号・名前をクリックすると学生のページを開きます",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
@@ -117,20 +129,30 @@ private fun SummaryRowView(
     intervention: Intervention?,
     columns: List<SummaryColumn>,
     horizontal: ScrollState,
+    onOpenStudent: () -> Unit,
     onCellClick: (SummaryColumn) -> Unit,
 ) {
     Row(
         Modifier.horizontalScroll(horizontal).height(34.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(row.studentId.value, style = MaterialTheme.typography.bodySmall, modifier = Modifier.width(idWidth).padding(horizontal = 8.dp))
-        Text(
-            row.studentName,
-            style = MaterialTheme.typography.bodySmall,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.width(nameWidth).padding(horizontal = 8.dp),
-        )
+        // 学籍番号・名前のクリックで学生のページを開く
+        Row(Modifier.fillMaxHeight().clickable(onClick = onOpenStudent), verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                row.studentId.value,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.width(idWidth).padding(horizontal = 8.dp),
+            )
+            Text(
+                row.studentName,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.primary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.width(nameWidth).padding(horizontal = 8.dp),
+            )
+        }
         Box(Modifier.width(interventionWidth).padding(horizontal = 8.dp)) {
             InterventionMarks(intervention)
         }

@@ -24,6 +24,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Delete
@@ -81,6 +82,7 @@ import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.isCtrlPressed
 import androidx.compose.ui.input.key.isShiftPressed
 import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.text.TextStyle
@@ -121,6 +123,7 @@ internal fun ConfigEditorPanel(
     viewModel: ConfigEditorViewModel,
     gradingConfigPath: String,
     onUseForGrading: (String) -> Unit,
+    onBack: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val snackbar = remember { SnackbarHostState() }
@@ -139,10 +142,19 @@ internal fun ConfigEditorPanel(
                     else -> return@onPreviewKeyEvent false
                 }
                 true
+            }
+            // Esc で採点画面に戻る (ダイアログやメニューが開いているときは、そちらが先に Esc を受け取る)
+            .onKeyEvent { event ->
+                if (event.type == KeyEventType.KeyDown && event.key == Key.Escape) {
+                    onBack()
+                    true
+                } else {
+                    false
+                }
             },
     ) {
         Column(Modifier.fillMaxSize()) {
-            EditorTopBar(state, viewModel, gradingConfigPath, onUseForGrading)
+            EditorTopBar(state, viewModel, gradingConfigPath, onUseForGrading, onBack)
             Banners(state, viewModel)
             HorizontalDivider()
             when (state.mode) {
@@ -195,12 +207,15 @@ private fun EditorTopBar(
     viewModel: ConfigEditorViewModel,
     gradingConfigPath: String,
     onUseForGrading: (String) -> Unit,
+    onBack: () -> Unit,
 ) {
     Row(
-        Modifier.fillMaxWidth().padding(start = 24.dp, end = 12.dp, top = 12.dp, bottom = 12.dp),
+        Modifier.fillMaxWidth().padding(start = 8.dp, end = 12.dp, top = 12.dp, bottom = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
+        // 採点画面に戻る (編集中の内容は残る)
+        TooltipIconButton("採点画面に戻る (Esc)", Icons.AutoMirrored.Filled.ArrowBack, onBack)
         // タイトル: ファイル名 + 状態
         Column(Modifier.weight(1f)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {

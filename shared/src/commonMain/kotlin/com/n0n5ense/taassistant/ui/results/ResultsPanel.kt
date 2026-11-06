@@ -26,6 +26,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -78,13 +79,19 @@ import com.n0n5ense.taassistant.ui.common.Intervention
 import com.n0n5ense.taassistant.ui.common.InterventionMarks
 import com.n0n5ense.taassistant.ui.common.JudgeBadge
 import com.n0n5ense.taassistant.ui.common.TextBlock
+import com.n0n5ense.taassistant.ui.common.TooltipIconButton
 import com.n0n5ense.taassistant.ui.common.interventionsByStudent
 import com.n0n5ense.taassistant.ui.common.judgeColors
 import com.n0n5ense.taassistant.ui.main.AppViewModel
 import com.n0n5ense.taassistant.ui.main.UiState
 
 @Composable
-internal fun ResultsPanel(state: UiState, viewModel: AppViewModel, modifier: Modifier = Modifier) {
+internal fun ResultsPanel(
+    state: UiState,
+    viewModel: AppViewModel,
+    modifier: Modifier = Modifier,
+    onOpenStudent: (StudentId) -> Unit = {},
+) {
     val outcome = state.outcome
     if (outcome == null || state.results.isEmpty()) {
         Box(modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -101,8 +108,9 @@ internal fun ResultsPanel(state: UiState, viewModel: AppViewModel, modifier: Mod
     val view = state.resultView
     val filter = view.filter
     val query = view.query
-    // 学生ごとにまとめる (学生の順は提出物ディレクトリの順)
-    val groups = remember(state.results, filter, query, names, studentOrder) {
+    val taskOrder = remember(outcome) { outcome.config.tasks.keys.withIndex().associate { (i, task) -> task to i } }
+    // 学生ごと → 課題ごとにまとめる (学生は提出物ディレクトリの順、課題はコンフィグの順、課題不明は最後)
+    val groups = remember(state.results, filter, query, names, studentOrder, taskOrder) {
         val q = query.trim()
         state.results
             .filter { r ->
@@ -117,7 +125,12 @@ internal fun ResultsPanel(state: UiState, viewModel: AppViewModel, modifier: Mod
             .groupBy { it.studentId }
             .entries
             .sortedBy { studentOrder[it.key] ?: Int.MAX_VALUE }
-            .map { (id, results) -> StudentGroup(id, names[id].orEmpty(), results) }
+            .map { (id, results) ->
+                val tasks = results.groupBy { it.taskName }.entries
+                    .sortedBy { (task, _) -> task?.let { taskOrder[it] } ?: Int.MAX_VALUE }
+                    .map { (task, taskResults) -> TaskGroup(TaskGroupKey(id, task), taskResults) }
+                StudentGroup(id, names[id].orEmpty(), tasks)
+            }
     }
     val interventions = remember(state.results) { state.results.interventionsByStudent() }
     // キー操作で移動する順 (一覧の表示順)
@@ -219,7 +232,10 @@ internal fun ResultsPanel(state: UiState, viewModel: AppViewModel, modifier: Mod
                 interventions = interventions,
                 collapsed = view.collapsed,
                 onCollapsedChange = { c -> viewModel.updateResultView { it.copy(collapsed = c) } },
+                collapsedTasks = view.collapsedTasks,
+                onCollapsedTasksChange = { c -> viewModel.updateResultView { it.copy(collapsedTasks = c) } },
                 selectedId = state.selectedId,
+                onOpenStudent = onOpenStudent,
                 onSelect = {
                     viewModel.select(it)
                     runCatching { focusRequester.requestFocus() }
@@ -241,6 +257,7 @@ internal fun ResultsPanel(state: UiState, viewModel: AppViewModel, modifier: Mod
                     tasks = outcome.config.tasks.keys.toList(),
                     assigning = state.assigningSource == selected.source.displayPath,
                     canAssign = !state.isRunning && state.assigningSource == null,
+                    onOpenStudent = { onOpenStudent(selected.studentId) },
                     modifier = Modifier.weight(1f).fillMaxHeight(),
                 )
             }
@@ -248,21 +265,49 @@ internal fun ResultsPanel(state: UiState, viewModel: AppViewModel, modifier: Mod
     }
 }
 
-internal class StudentGroup(val studentId: StudentId, val name: String, val results: List<TestResult>)
+internal class TaskGroup(val key: TaskGroupKey, val results: List<TestResult>)
 
-/** LazyColumn 上での、[groupIndex] 番目の学生の見出しの位置 */
-private fun headerIndexOf(groups: List<StudentGroup>, collapsed: Set<StudentId>, groupIndex: Int): Int =
-    groups.take(groupIndex).sumOf { 1 + if (it.studentId in collapsed) 0 else it.results.size }
-
-/** LazyColumn 上の [itemIndex] 番目の項目が属する学生の番号 */
-private fun groupIndexAt(groups: List<StudentGroup>, collapsed: Set<StudentId>, itemIndex: Int): Int {
-    var index = 0
-    groups.forEachIndexed { i, group ->
-        index += 1 + if (group.studentId in collapsed) 0 else group.results.size
-        if (itemIndex < index) return i
-    }
-    return groups.lastIndex
+internal class StudentGroup(val studentId: StudentId, val name: String, val tasks: List<TaskGroup>) {
+    /** 表示順 (課題の順) に並べた結果 */
+    val results: List<TestResult> = tasks.flatMap { it.results }
 }
+
+/** 一覧の1行 (学生の見出し / 課題の見出し / 結果) */
+private sealed interface ListEntry {
+    val key: Any
+
+    class Student(val group: StudentGroup) : ListEntry {
+        override val key: Any get() = "student:${group.studentId.value}"
+    }
+
+    class Task(val group: TaskGroup) : ListEntry {
+        override val key: Any get() = "task:${group.key.studentId.value}:${group.key.taskName?.name}"
+    }
+
+    class Result(val result: TestResult) : ListEntry {
+        override val key: Any get() = result.id
+    }
+}
+
+/** 開閉の状態に合わせて、一覧に並べる行を作る */
+private fun buildEntries(
+    groups: List<StudentGroup>,
+    collapsed: Set<StudentId>,
+    collapsedTasks: Set<TaskGroupKey>,
+): List<ListEntry> = buildList {
+    groups.forEach { group ->
+        add(ListEntry.Student(group))
+        if (group.studentId !in collapsed) {
+            group.tasks.forEach { task ->
+                add(ListEntry.Task(task))
+                if (task.key !in collapsedTasks) task.results.forEach { add(ListEntry.Result(it)) }
+            }
+        }
+    }
+}
+
+private fun List<ListEntry>.indexOfStudent(id: StudentId): Int =
+    indexOfFirst { it is ListEntry.Student && it.group.studentId == id }
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -271,11 +316,15 @@ private fun ResultList(
     interventions: Map<StudentId, Intervention>,
     collapsed: Set<StudentId>,
     onCollapsedChange: (Set<StudentId>) -> Unit,
+    collapsedTasks: Set<TaskGroupKey>,
+    onCollapsedTasksChange: (Set<TaskGroupKey>) -> Unit,
     selectedId: Int?,
+    onOpenStudent: (StudentId) -> Unit,
     onSelect: (Int) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val listState = rememberLazyListState()
+    val entries = remember(groups, collapsed, collapsedTasks) { buildEntries(groups, collapsed, collapsedTasks) }
 
     // 選択中の結果が見えるようにスクロールする。
     // 開閉では動かさない (選択が変わったときと、一覧の中身が変わったときだけ)
@@ -285,12 +334,10 @@ private fun ResultList(
     LaunchedEffect(scrollKey) {
         if (scrollKey == lastScrollKey) return@LaunchedEffect
         lastScrollKey = scrollKey
-        val groupIndex = groups.indexOfFirst { g -> g.results.any { it.id == selectedId } }
-        if (groupIndex < 0) return@LaunchedEffect
-        val group = groups[groupIndex]
-        // 選択した学生は自動で開かれるので、開いた状態として数える
-        val effective = collapsed - group.studentId
-        val target = headerIndexOf(groups, effective, groupIndex) + 1 + group.results.indexOfFirst { it.id == selectedId }
+        val selected = groups.firstNotNullOfOrNull { g -> g.results.firstOrNull { it.id == selectedId } } ?: return@LaunchedEffect
+        // 選択した結果の学生・課題は自動で開かれるので、開いた状態として数える
+        val target = buildEntries(groups, collapsed - selected.studentId, collapsedTasks - selected.taskGroupKey)
+            .indexOfFirst { it is ListEntry.Result && it.result.id == selectedId }
         val visibleItems = listState.layoutInfo.visibleItemsInfo
         val first = visibleItems.firstOrNull()?.index ?: 0
         val last = visibleItems.lastOrNull()?.index ?: 0
@@ -300,22 +347,33 @@ private fun ResultList(
 
     // 開閉で表示位置がずれないよう、開閉と同時に基準の見出しへの位置を指定する。
     // requestScrollToItem は次のレイアウト (= 開閉後の一覧) で適用される
-    fun toggle(groupIndex: Int) {
-        val id = groups[groupIndex].studentId
-        val header = headerIndexOf(groups, collapsed, groupIndex) // 自分より前の学生だけで決まるので、開閉の前後で同じ
+    fun scrolledPast(index: Int): Boolean {
         val first = listState.firstVisibleItemIndex
+        return index < first || (index == first && listState.firstVisibleItemScrollOffset > 0)
+    }
+
+    fun toggle(group: StudentGroup) {
+        val id = group.studentId
+        // 見出しの位置は自分より前の行だけで決まるので、開閉の前後で同じ
+        val header = entries.indexOfStudent(id)
         // 見出しが上端に貼り付いている (中身の途中までスクロールしている) ときに閉じると、
-        // 基準にしていた項目が消えて位置が飛ぶ。閉じた後は見出しが上端に来るようにする
-        val stuck = header < first || (header == first && listState.firstVisibleItemScrollOffset > 0)
-        if (stuck) listState.requestScrollToItem(header)
+        // 基準にしていた行が消えて位置が飛ぶ。閉じた後は見出しが上端に来るようにする
+        if (scrolledPast(header)) listState.requestScrollToItem(header)
         onCollapsedChange(if (id in collapsed) collapsed - id else collapsed + id)
     }
 
+    fun toggleTask(task: TaskGroup) {
+        val header = entries.indexOfFirst { it is ListEntry.Task && it.group.key == task.key }
+        // 課題の見出しより下までスクロールしているときは、学生の見出しを上端にする
+        if (header >= 0 && scrolledPast(header)) listState.requestScrollToItem(entries.indexOfStudent(task.key.studentId))
+        onCollapsedTasksChange(if (task.key in collapsedTasks) collapsedTasks - task.key else collapsedTasks + task.key)
+    }
+
     fun toggleAll(collapseAll: Boolean) {
-        val anchor = groupIndexAt(groups, collapsed, listState.firstVisibleItemIndex)
-        val next = if (collapseAll) groups.map { it.studentId }.toSet() else emptySet()
         // いま上端にいる学生の見出しが、開閉後も上端に来るようにする
-        listState.requestScrollToItem(headerIndexOf(groups, next, anchor))
+        val anchor = entries.take(listState.firstVisibleItemIndex + 1).lastOrNull { it is ListEntry.Student } as ListEntry.Student?
+        val next = if (collapseAll) groups.map { it.studentId }.toSet() else emptySet()
+        anchor?.let { listState.requestScrollToItem(buildEntries(groups, next, collapsedTasks).indexOfStudent(it.group.studentId)) }
         onCollapsedChange(next)
     }
 
@@ -342,25 +400,76 @@ private fun ResultList(
         HorizontalDivider()
         Box(Modifier.weight(1f).fillMaxWidth()) {
             LazyColumn(Modifier.fillMaxSize(), state = listState) {
-                groups.forEachIndexed { groupIndex, group ->
-                    val isCollapsed = group.studentId in collapsed
-                    stickyHeader(key = "student:${group.studentId.value}") {
-                        StudentHeader(
-                            group = group,
-                            intervention = interventions[group.studentId],
-                            collapsed = isCollapsed,
-                            containsSelection = group.results.any { it.id == selectedId },
-                            onClick = { toggle(groupIndex) },
-                        )
-                    }
-                    if (!isCollapsed) {
-                        items(group.results, key = { it.id }) { result ->
-                            ResultRow(result, selected = result.id == selectedId, onClick = { onSelect(result.id) })
+                entries.forEach { entry ->
+                    when (entry) {
+                        // 学生の見出しは上端に貼り付ける (課題の見出しは貼り付けない。どの学生を見ているかを残すため)
+                        is ListEntry.Student -> stickyHeader(key = entry.key) {
+                            val group = entry.group
+                            StudentHeader(
+                                group = group,
+                                intervention = interventions[group.studentId],
+                                collapsed = group.studentId in collapsed,
+                                containsSelection = group.results.any { it.id == selectedId },
+                                onClick = { toggle(group) },
+                                onOpenStudent = { onOpenStudent(group.studentId) },
+                            )
+                        }
+
+                        is ListEntry.Task -> item(key = entry.key) {
+                            val task = entry.group
+                            TaskHeader(
+                                task = task,
+                                collapsed = task.key in collapsedTasks,
+                                containsSelection = task.results.any { it.id == selectedId },
+                                onClick = { toggleTask(task) },
+                            )
+                        }
+
+                        is ListEntry.Result -> item(key = entry.key) {
+                            ResultRow(entry.result, selected = entry.result.id == selectedId, onClick = { onSelect(entry.result.id) })
                         }
                     }
                 }
             }
             AppVerticalScrollbar(listState, Modifier.align(Alignment.CenterEnd).fillMaxHeight())
+        }
+    }
+}
+
+/** 課題の見出し。判定ごとの件数を並べる。クリックで開閉 */
+@Composable
+private fun TaskHeader(task: TaskGroup, collapsed: Boolean, containsSelection: Boolean, onClick: () -> Unit) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .background(MaterialTheme.colorScheme.surfaceContainerLow)
+            .clickable(onClick = onClick)
+            .padding(start = 20.dp, end = 12.dp, top = 4.dp, bottom = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Icon(
+            if (collapsed) Icons.Filled.KeyboardArrowDown else Icons.Filled.KeyboardArrowUp,
+            contentDescription = if (collapsed) "開く" else "閉じる",
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(18.dp),
+        )
+        Text(
+            task.key.taskName?.name ?: "(課題不明)",
+            style = MaterialTheme.typography.labelLarge,
+            color = if (collapsed && containsSelection) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f, fill = false),
+        )
+        if (task.results.any { it.assigned }) {
+            Text("(割り当て)", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        Spacer(Modifier.weight(1f))
+        val counts = task.results.groupingBy { it.judge }.eachCount()
+        Judge.entries.filter { it in counts }.forEach { judge ->
+            JudgeBadge(judge)
+            Text("${counts[judge]}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }
@@ -373,6 +482,7 @@ private fun StudentHeader(
     collapsed: Boolean,
     containsSelection: Boolean,
     onClick: () -> Unit,
+    onOpenStudent: () -> Unit,
 ) {
     Surface(color = MaterialTheme.colorScheme.surfaceContainerHigh, modifier = Modifier.fillMaxWidth()) {
         Row(
@@ -412,6 +522,7 @@ private fun StudentHeader(
                     }
                 }
             }
+            TooltipIconButton("学生のページ (提出ファイル)", Icons.Filled.Person, onOpenStudent)
         }
     }
 }
@@ -423,15 +534,19 @@ private fun ResultRow(result: TestResult, selected: Boolean, onClick: () -> Unit
             .fillMaxWidth()
             .background(if (selected) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surface)
             .clickable(onClick = onClick)
-            .padding(start = 34.dp, end = 12.dp, top = 6.dp, bottom = 6.dp),
+            .padding(start = 44.dp, end = 12.dp, top = 6.dp, bottom = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         JudgeBadge(result.judge, manual = result.manualJudge != null, modifier = Modifier.width(48.dp))
         Spacer(Modifier.width(10.dp))
         Column(Modifier.weight(1f)) {
             Text(
-                listOfNotNull(result.taskName?.name ?: "(課題不明)", result.testCase?.name).joinToString(" : ") +
-                    if (result.assigned) " (割り当て)" else "",
+                result.testCase?.name ?: when (result.judge) {
+                    Judge.NF -> "課題を特定できません"
+                    Judge.CE -> "コンパイルエラー"
+                    Judge.IE -> "内部エラー"
+                    else -> "(テストケースなし)"
+                },
                 style = MaterialTheme.typography.bodyMedium,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
@@ -457,6 +572,7 @@ private fun ResultDetail(
     tasks: List<TaskName>,
     assigning: Boolean,
     canAssign: Boolean,
+    onOpenStudent: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var showSource by rememberSaveable(result.source.path) { mutableStateOf(false) }
@@ -498,6 +614,8 @@ private fun ResultDetail(
                         )
                     }
                 }
+                TextButton(onClick = onOpenStudent) { Text("学生のページ") }
+                Spacer(Modifier.width(8.dp))
                 OutlinedButton(onClick = { onMove(-1) }) { Text("前へ") }
                 Spacer(Modifier.width(8.dp))
                 OutlinedButton(onClick = { onMove(1) }) { Text("次へ") }

@@ -18,6 +18,8 @@ kotlin {
             implementation(libs.compose.uiToolingPreview)
             implementation(libs.androidx.lifecycle.viewmodelCompose)
             implementation(libs.androidx.lifecycle.runtimeCompose)
+            implementation(libs.navigation3.ui)
+            implementation(libs.androidx.lifecycle.viewmodelNavigation3)
             implementation(libs.kotlinx.coroutinesCore)
             implementation(libs.kotlinx.serializationCore)
             implementation(libs.kotlinx.serializationJson)
@@ -26,6 +28,11 @@ kotlin {
         jvmMain.dependencies {
             implementation(libs.poi.ooxml)
             implementation(libs.kotlinx.coroutinesSwing)
+        }
+        jvmTest.dependencies {
+            // UI テスト (コンフィグエディタへの画面遷移など)
+            implementation(compose.desktop.uiTestJUnit4)
+            implementation(compose.desktop.currentOs)
         }
         commonTest.dependencies {
             implementation(libs.kotlin.test)

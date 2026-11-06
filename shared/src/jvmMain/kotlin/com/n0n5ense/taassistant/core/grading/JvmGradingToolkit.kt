@@ -117,9 +117,32 @@ class JvmGradingToolkit : GradingToolkit {
                         .onFailure { log("$id: ${file.name} のコピーに失敗しました: ${it.message}") }
                 }
             }
-            students.getOrPut(id) { Student(id, name, studentDir.absolutePath) }
+            students.getOrPut(id) { Student(id, name, studentDir.absolutePath, dir.absolutePath) }
         }
         students.values.toList()
+    }
+
+    override suspend fun listSubmissionFiles(student: Student): SubmissionFiles = withContext(Dispatchers.IO) {
+        fun list(dir: File): List<FileEntry> =
+            if (!dir.isDirectory) {
+                emptyList()
+            } else {
+                dir.walkTopDown()
+                    .filter { it.isFile }
+                    .map { FileEntry(it.absolutePath, it.relativeTo(dir).path.replace(File.separatorChar, '/'), it.length()) }
+                    .sortedBy { it.relativePath }
+                    .toList()
+            }
+        SubmissionFiles(
+            submitted = student.submissionDir.takeIf { it.isNotBlank() }?.let { list(File(it)) }.orEmpty(),
+            extracted = list(File(student.workspaceDir, SOURCES_DIR)),
+        )
+    }
+
+    override suspend fun listArchive(path: String, format: ArchiveFormat): ArchiveListing = withContext(Dispatchers.IO) {
+        val file = File(path)
+        require(file.isFile) { "ファイルが見つかりません: $path" }
+        listArchive(file, format)
     }
 
     override suspend fun findSources(student: Student): List<SourceFile> = withContext(Dispatchers.IO) {

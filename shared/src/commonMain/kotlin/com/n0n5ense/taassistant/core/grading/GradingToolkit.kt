@@ -11,6 +11,26 @@ import com.n0n5ense.taassistant.core.model.encoding
 import com.n0n5ense.taassistant.core.report.Report
 import com.n0n5ense.taassistant.core.report.ReportFormat
 
+/** ファイル一覧の1件 */
+data class FileEntry(
+    /** 絶対パス */
+    val path: String,
+    /** 一覧の基準ディレクトリからの相対パス (区切りは /) */
+    val relativePath: String,
+    val size: Long,
+) {
+    val fileName: String get() = relativePath.substringAfterLast('/')
+    val extension: String get() = fileName.substringAfterLast('.', "").lowercase()
+}
+
+/** 学生の提出ファイル */
+data class SubmissionFiles(
+    /** 元の提出ディレクトリにあるファイル (zip など)。ディレクトリが分からなければ空 */
+    val submitted: List<FileEntry>,
+    /** workspace に展開・コピーしたソース */
+    val extracted: List<FileEntry>,
+)
+
 /** javac / java の場所 */
 data class JavaToolchain(
     /** JDK の bin ディレクトリ。空なら PATH 上のコマンドを使う */
@@ -50,6 +70,12 @@ interface GradingToolkit {
     ): List<Student>
 
     suspend fun findSources(student: Student): List<SourceFile>
+
+    /** 学生の提出ファイル (元の提出ディレクトリと、展開したソース) を一覧する */
+    suspend fun listSubmissionFiles(student: Student): SubmissionFiles
+
+    /** アーカイブを展開せずに、中の項目を一覧する */
+    suspend fun listArchive(path: String, format: ArchiveFormat): ArchiveListing
 
     /** UTF-8 → Shift_JIS の順に試してコンパイルする */
     suspend fun compile(source: SourceFile, student: Student, toolchain: JavaToolchain, timeoutMillis: Long): CompileOutcome

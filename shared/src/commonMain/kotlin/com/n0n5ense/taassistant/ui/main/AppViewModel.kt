@@ -62,6 +62,9 @@ data class OpenProject(val path: String) {
     val name: String get() = path.substringAfterLast('/').substringAfterLast('\\').removeSuffix(".${ProjectCodec.EXTENSION}")
 }
 
+/** プロジェクトの操作の結果 (複製したときなど)。[openPath] があれば「開く」を出す */
+data class ProjectNotice(val message: String, val openPath: String? = null)
+
 sealed interface SaveStatus {
     data object Saved : SaveStatus
     data object Saving : SaveStatus
@@ -75,6 +78,7 @@ data class UiState(
     val projectError: String? = null,
     val recentProjects: List<String> = emptyList(),
     val saveStatus: SaveStatus = SaveStatus.Saved,
+    val projectNotice: ProjectNotice? = null,
     val setup: SetupState = SetupState(),
     val status: RunStatus = RunStatus.Idle,
     val logs: List<LogLine> = emptyList(),
@@ -185,6 +189,76 @@ class AppViewModel(
 
     fun dismissProjectError() = _state.update { it.copy(projectError = null) }
 
+    fun dismissProjectNotice() = _state.update { it.copy(projectNotice = null) }
+
+    /** 今の内容を別のファイルに保存し、以後はそのファイルを開いている状態にする (元のファイルは最後に保存した状態で残る) */
+    fun saveProjectAs() {
+        val path = pickProjectCopyPath("別名で保存") ?: return
+        viewModelScope.launch {
+            // 自動保存と同じく、元のファイルにも今の内容を書いておく
+            flushSave()
+            val snapshot = state.value.saveSnapshot()?.copy(path = path) ?: return@launch
+            try {
+                saveMutex.withLock {
+                    services.toolkit.writeBinaryFile(path, encodeProject(snapshot))
+                    lastSaved = snapshot
+                }
+                _state.update {
+                    it.copy(
+                        project = OpenProject(path),
+                        saveStatus = SaveStatus.Saved,
+                        projectNotice = ProjectNotice("別名で保存しました: $path"),
+                    )
+                }
+                rememberProject(path)
+                appendLog("プロジェクトを別名で保存しました: $path", LogLevel.Info)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                _state.update { it.copy(projectError = "別名で保存できませんでした: ${e.message}") }
+            }
+        }
+    }
+
+    /**
+     * 今の内容を別のファイルに複製する。開いているプロジェクトは変えない。
+     * [includeResults] が false なら設定だけを複製する (次の回の課題を同じ設定で始めるときなど)。
+     */
+    fun duplicateProject(includeResults: Boolean) {
+        val path = pickProjectCopyPath(if (includeResults) "プロジェクトを複製" else "設定だけを複製") ?: return
+        viewModelScope.launch {
+            val snapshot = state.value.saveSnapshot()?.copy(path = path) ?: return@launch
+            try {
+                services.toolkit.writeBinaryFile(path, encodeProject(snapshot, includeResults))
+                addRecentProject(path)
+                val what = if (includeResults) "複製しました" else "設定だけを複製しました"
+                _state.update { it.copy(projectNotice = ProjectNotice("$what: $path", openPath = path)) }
+                appendLog("プロジェクトを$what: $path", LogLevel.Info)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                _state.update { it.copy(projectError = "複製できませんでした: ${e.message}") }
+            }
+        }
+    }
+
+    /** プロジェクトのあるフォルダを開く */
+    fun openProjectFolder() {
+        state.value.project?.path?.let(services::parentDirectory)?.let(services::openPath)
+    }
+
+    /** 別名で保存・複製の保存先を選ぶ。今のファイルと同じなら null */
+    private fun pickProjectCopyPath(title: String): String? {
+        val current = state.value.project ?: return null
+        if (state.value.isRunning) return null
+        val path = services.pickSaveFile(title, services.parentDirectory(current.path), listOf(ProjectCodec.EXTENSION)) ?: return null
+        if (path == current.path) {
+            _state.update { it.copy(projectError = "今開いているプロジェクトと同じファイルです") }
+            return null
+        }
+        return path
+    }
+
     private suspend fun load(path: String) {
         _state.update { it.copy(loadingProject = true, projectError = null) }
         try {
@@ -227,26 +301,33 @@ class AppViewModel(
         state.value.saveSnapshot()?.let { save(it) }
     }
 
+    /**
+     * [snapshot] をプロジェクトファイルの中身にする。パスは [snapshot] の保存先を基準にした相対パスにする。
+     * [includeResults] が false なら、設定だけにする (課題の割り当てと結果を含めない)。
+     */
+    private suspend fun encodeProject(snapshot: SaveSnapshot, includeResults: Boolean = true): ByteArray =
+        withContext(Dispatchers.Default) {
+            val settings = snapshot.settings.let { s ->
+                s.copy(
+                    rootDir = services.relativeToFile(snapshot.path, s.rootDir),
+                    configPath = services.relativeToFile(snapshot.path, s.configPath),
+                    outputDir = services.relativeToFile(snapshot.path, s.outputDir),
+                )
+            }
+            ProjectCodec.encode(
+                ProjectFile(
+                    settings = settings,
+                    assignments = if (includeResults) snapshot.assignments.map { (source, tasks) -> TaskAssignment(source, tasks) } else emptyList(),
+                    outcome = if (includeResults) snapshot.outcome?.copy(results = snapshot.results) else null,
+                ),
+            )
+        }
+
     private suspend fun save(snapshot: SaveSnapshot) = saveMutex.withLock {
         if (snapshot == lastSaved) return@withLock
         _state.update { if (it.project?.path == snapshot.path) it.copy(saveStatus = SaveStatus.Saving) else it }
         val status = try {
-            val bytes = withContext(Dispatchers.Default) {
-                val settings = snapshot.settings.let { s ->
-                    s.copy(
-                        rootDir = services.relativeToFile(snapshot.path, s.rootDir),
-                        configPath = services.relativeToFile(snapshot.path, s.configPath),
-                        outputDir = services.relativeToFile(snapshot.path, s.outputDir),
-                    )
-                }
-                ProjectCodec.encode(
-                    ProjectFile(
-                        settings = settings,
-                        assignments = snapshot.assignments.map { (source, tasks) -> TaskAssignment(source, tasks) },
-                        outcome = snapshot.outcome?.copy(results = snapshot.results),
-                    ),
-                )
-            }
+            val bytes = encodeProject(snapshot)
             services.toolkit.writeBinaryFile(snapshot.path, bytes)
             lastSaved = snapshot
             SaveStatus.Saved
@@ -260,6 +341,11 @@ class AppViewModel(
 
     private fun rememberProject(path: String) {
         services.settings.put(KEY_LAST_PROJECT, path)
+        addRecentProject(path)
+    }
+
+    /** 最近のプロジェクトの先頭に追加する */
+    private fun addRecentProject(path: String) {
         val recent = (listOf(path) + state.value.recentProjects.filter { it != path }).take(MAX_RECENT_PROJECTS)
         services.settings.put(KEY_RECENT_PROJECTS, recent.joinToString("\n"))
         _state.update { it.copy(recentProjects = recent) }
@@ -360,7 +446,10 @@ class AppViewModel(
                         results = results,
                         selectedId = results.firstOrNull()?.id,
                         // 既定ではすべての学生を閉じておく (最初の結果を選んでいても開かない)
-                        resultView = it.resultView.copy(collapsed = outcome.students.map { s -> s.id }.toSet()),
+                        resultView = it.resultView.copy(
+                            collapsed = outcome.students.map { s -> s.id }.toSet(),
+                            collapsedTasks = emptySet(),
+                        ),
                     )
                 }
                 if (outcome.lastStep == LastStep.Test && setup.autoExport) export()
@@ -396,16 +485,11 @@ class AppViewModel(
 
     // ------------------------------------------------------------ review
 
-    /** 結果を選ぶ。閉じている学生の結果なら、その学生を開く */
+    /** 結果を選ぶ。閉じている学生・課題の結果なら、それを開く */
     fun select(id: Int?) {
         _state.update { s ->
-            val student = s.results.firstOrNull { it.id == id }?.studentId
-            val view = if (student != null && student in s.resultView.collapsed) {
-                s.resultView.copy(collapsed = s.resultView.collapsed - student)
-            } else {
-                s.resultView
-            }
-            s.copy(selectedId = id, resultView = view)
+            val result = s.results.firstOrNull { it.id == id }
+            s.copy(selectedId = id, resultView = result?.let(s.resultView::reveal) ?: s.resultView)
         }
     }
 

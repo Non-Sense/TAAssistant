@@ -46,6 +46,8 @@ data class Student(
     val name: String,
     /** workspace/<学籍番号> の絶対パス */
     val workspaceDir: String,
+    /** 元の提出ディレクトリ (Moodle からダウンロードしたもの) の絶対パス。古いプロジェクトファイルでは空 */
+    val submissionDir: String = "",
 )
 
 @Serializable
