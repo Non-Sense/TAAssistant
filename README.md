@@ -11,6 +11,27 @@ Moodle からダウンロードした Java の提出物を展開 → コンパ�
 
 前提: `javac` / `java` が PATH 上にあること (または画面の「JDK の bin ディレクトリ」で指定)。
 
+## 配布用のファイルを作る
+
+| 形式                                 | コマンド                                         | 出力先                                              | 実行する PC の Java |
+|--------------------------------------|--------------------------------------------------|-----------------------------------------------------|---------------------|
+| 実行ファイル (フォルダごと配布)      | `./gradlew :desktopApp:createDistributable`      | `desktopApp/build/compose/binaries/main/app/TAAssistant/` (`TAAssistant.exe`) | 不要 (同梱)         |
+| インストーラー (Windows)             | `./gradlew :desktopApp:packageMsi` / `packageExe` | `desktopApp/build/compose/binaries/main/msi/` / `exe/` | 不要 (同梱)         |
+| インストーラー (macOS / Linux)       | `./gradlew :desktopApp:packageDmg` / `packageDeb` | `desktopApp/build/compose/binaries/main/dmg/` / `deb/` | 不要 (同梱)         |
+| 実行可能 jar                         | `./gradlew :desktopApp:packageUberJarForCurrentOS` | `desktopApp/build/compose/jars/TAAssistant-<OS>-<CPU>-<バージョン>.jar` | 21 以上が必要       |
+
+- どの形式も、作った OS 向けのものしか作れません (Windows 用は Windows で、macOS 用は macOS で作る)。
+  実行可能 jar も、画面の描画に使うネイティブライブラリを含むため OS ごとに別です
+- 実行可能 jar は `java -jar TAAssistant-windows-x64-1.0.0.jar` で起動します
+- 実行ファイル・インストーラーは Java のランタイムを同梱しています (約 155MB)。同梱するモジュールは
+  `desktopApp/build.gradle.kts` の `modules(...)` で指定しています。依存ライブラリを変えたら
+  `./gradlew :desktopApp:suggestRuntimeModules` で足りないものがないか確認してください
+- Windows のインストーラーを作るのに必要な WiX は、ビルドが自動で取得します
+- バージョンは `desktopApp/build.gradle.kts` の `packageVersion` で変えます。`windows { upgradeUuid }` は
+  上書きインストールに使うので変えないでください
+- どの形式でも、採点に使う `javac` / `java` / `javap` は同梱のランタイムではなく、PATH 上か画面で指定した JDK のものを使います。
+  採点する PC には JDK が必要です
+
 ## 使い方
 
 0. **プロジェクト**: 最初の画面で「新しいプロジェクト…」を選び、プロジェクトファイル (`.taa`) の保存先を決める
