@@ -221,7 +221,8 @@ private fun planFor(config: Config, compiled: CompiledSource, tasks: List<TaskNa
                 val definition = config.tasks.getValue(task)
                 definition.testcase
                     .map<TestCase, TestPlan> {
-                        if (definition.manual) {
+                        // メソッド呼び出しの確認は実行しないので、手動で判定する課題でも自動で行う
+                        if (definition.manual && it.calls.isEmpty()) {
                             TestPlan.Fixed(compiled, task, assigned, Judge.Unknown, testCase = it)
                         } else {
                             TestPlan.Execute(compiled, outcome, task, it, assigned)

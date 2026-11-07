@@ -64,10 +64,12 @@ import androidx.compose.ui.input.key.isMetaPressed
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.input.key.type
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.n0n5ense.taassistant.core.config.TaskName
+import com.n0n5ense.taassistant.core.grading.CallCheck
 import com.n0n5ense.taassistant.core.grading.GradingOutcome
 import com.n0n5ense.taassistant.core.model.CompileOutcome
 import com.n0n5ense.taassistant.core.model.Judge
@@ -863,7 +865,11 @@ private fun ResultDetail(
                 }
             }
 
-            if (testCase != null) {
+            val callCheck = testCase != null && testCase.calls.isNotEmpty()
+            if (testCase != null && callCheck) {
+                CallCheckBlock(testCase.calls, execution?.mainCalls)
+            }
+            if (testCase != null && !callCheck) {
                 if (testCase.input.isNotEmpty()) TextBlock(
                     "標準入力",
                     testCase.input.joinToString("\n")
@@ -878,7 +884,7 @@ private fun ResultDetail(
                 if (testCodeError != null) {
                     // メソッドが無い・引数の型が違うなど
                     TextBlock("テストコードのコンパイルエラー", testCodeError.trimEnd())
-                } else {
+                } else if (!callCheck) {
                     TextBlock("標準出力", execution.stdout.trimEnd())
                     if (execution.stderr.isNotBlank()) TextBlock(
                         "標準エラー出力",
@@ -912,6 +918,42 @@ private fun ResultDetail(
             TextBlock(result.source.fileName, source ?: "読み込み中…")
         }
         AppVerticalScrollbar(scroll, Modifier.align(Alignment.CenterEnd).fillMaxHeight())
+    }
+}
+
+/** メソッド呼び出しの確認: 指定したメソッドごとの結果と、main から直接呼んでいたメソッドの一覧 */
+@Composable
+private fun CallCheckBlock(required: List<String>, calls: List<String>?) {
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text("確認するメソッド (main から直接呼んでいるか)", style = MaterialTheme.typography.labelLarge)
+        required.forEach { spec ->
+            val found = calls?.firstOrNull { CallCheck.matches(spec, it) }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                JudgeBadge(
+                    when {
+                        calls == null -> Judge.IE
+                        found != null -> Judge.AC
+                        else -> Judge.WA
+                    },
+                )
+                Text(spec, style = MaterialTheme.typography.bodyMedium, fontFamily = FontFamily.Monospace)
+                Text(
+                    when {
+                        calls == null -> "調べられませんでした"
+                        found != null -> "呼んでいます ($found)"
+                        else -> "呼んでいません"
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+    }
+    if (calls != null) {
+        TextBlock(
+            "main から直接呼んでいるメソッド (${calls.size})",
+            calls.joinToString("\n").ifEmpty { "(なし)" },
+        )
     }
 }
 

@@ -108,7 +108,9 @@ data class DetailRow(
                 input = result.testCase?.input?.joinToString("\n").orEmpty(),
                 stat = result.judge,
                 timeMillis = execution?.elapsedMillis,
-                expect = result.testCase?.expect?.joinToString("\n").orEmpty(),
+                expect = result.testCase?.let { tc ->
+                    if (tc.calls.isNotEmpty()) tc.calls.joinToString("\n") { "calls: $it" } else tc.expect.joinToString("\n")
+                }.orEmpty(),
                 stdout = execution?.stdout.orEmpty().normalizeNewlines().trimEnd(),
                 stderr = listOf(execution?.stderr.orEmpty(), result.note)
                     .filter(String::isNotBlank)

@@ -132,6 +132,8 @@ data class Execution(
     val testCode: String? = null,
     /** テストコードのコンパイルエラー (メソッドが無い・引数の型が違うなど)。null ならコンパイルできた */
     val testCodeError: String? = null,
+    /** メソッド呼び出しを確認するテストで、main から直接呼んでいたメソッド。調べられなかったら null */
+    val mainCalls: List<String>? = null,
 )
 
 /** 1ソースファイル × 1課題 × 1テストケース の結果 */

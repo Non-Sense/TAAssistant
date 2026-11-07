@@ -91,6 +91,7 @@ import com.n0n5ense.taassistant.core.config.DraftField
 import com.n0n5ense.taassistant.core.config.DraftIssue
 import com.n0n5ense.taassistant.core.config.TaskDraft
 import com.n0n5ense.taassistant.core.config.TestCaseDraft
+import com.n0n5ense.taassistant.core.config.TestMethod
 import com.n0n5ense.taassistant.core.config.parseSubmissionDirName
 import com.n0n5ense.taassistant.core.config.regexError
 import com.n0n5ense.taassistant.core.config.sampleMatches
@@ -787,7 +788,8 @@ private fun TaskEditor(
                 val nameError = issue(DraftField.TestCaseName, testCase.key)
                 val expectError = issue(DraftField.Expect, testCase.key)
                 val testCodeError = issue(DraftField.TestCode, testCase.key)
-                val hasError = listOf(nameError, expectError, testCodeError).any { it != null }
+                val callsError = issue(DraftField.Calls, testCase.key)
+                val hasError = listOf(nameError, expectError, testCodeError, callsError).any { it != null }
                 TestCaseCard(
                     index = caseIndex,
                     count = task.testCases.size,
@@ -795,6 +797,7 @@ private fun TaskEditor(
                     nameError = nameError,
                     expectError = expectError,
                     testCodeError = testCodeError,
+                    callsError = callsError,
                     manual = task.manual,
                     // エラーのあるカードは閉じられないようにする (エラーが見えなくなるため)
                     expanded = testCase.key !in collapsed || hasError,
@@ -833,6 +836,7 @@ private fun TestCaseCard(
     nameError: String?,
     expectError: String?,
     testCodeError: String?,
+    callsError: String?,
     manual: Boolean,
     expanded: Boolean,
     onToggle: () -> Unit,
@@ -841,7 +845,9 @@ private fun TestCaseCard(
     onDuplicate: () -> Unit,
     onRemove: () -> Unit,
 ) {
-    val hasError = listOf(nameError, expectError, testCodeError).any { it != null }
+    val hasError = listOf(nameError, expectError, testCodeError, callsError).any { it != null }
+    // メソッド呼び出しの確認は実行しないので、引数・入力・想定出力は使わない
+    val runs = testCase.method != TestMethod.Calls
     val sampleResult = if (testCase.sampleOutput.isNotEmpty()) testCase.sampleMatches() else null
 
     OutlinedCard(Modifier.fillMaxWidth()) {
@@ -919,7 +925,7 @@ private fun TestCaseCard(
                             modifier = m,
                         )
                     },
-                    RowField(1.5f, null, "空白区切り。\"…\" で空白を含められます") { m ->
+                    if (runs) RowField(1.5f, null, "空白区切り。\"…\" で空白を含められます") { m ->
                         EditorField(
                             label = "コマンドライン引数 (任意)",
                             value = testCase.arg,
@@ -928,13 +934,28 @@ private fun TestCaseCard(
                             supportingInside = false,
                             modifier = m,
                         )
-                    },
+                    } else null,
                 )
                 TestMethodChooser(
-                    useTestCode = testCase.useTestCode,
-                    onSelect = { custom -> onChange { it.copy(useTestCode = custom) } },
+                    method = testCase.method,
+                    onSelect = { method -> onChange { it.copy(method = method) } },
                 )
-                if (testCase.useTestCode) {
+                if (testCase.method == TestMethod.Calls) {
+                    EditorField(
+                        label = "確認するメソッド",
+                        value = testCase.calls,
+                        onValueChange = { v -> onChange { it.copy(calls = v) } },
+                        error = callsError,
+                        hint = "1行に1つ。main から直接 (main の中のラムダを含む) すべて呼んでいれば AC です。" +
+                            "「sort」(名前だけ)・「Arrays.sort」「java.util.Arrays.sort」(クラス付き)・「new ArrayList」(コンストラクタ) と書けます。" +
+                            "main から呼んだ自作メソッドの中までは見ません",
+                        placeholder = "Arrays.sort\nnew Scanner",
+                        monospaced = true,
+                        minLines = 3,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+                if (testCase.method == TestMethod.TestCode) {
                     EditorField(
                         label = "テストコード (Java)",
                         value = testCase.testCode,
@@ -950,7 +971,7 @@ private fun TestCaseCard(
                         modifier = Modifier.fillMaxWidth(),
                     )
                 }
-                FieldRow(
+                if (runs) FieldRow(
                     RowField(1f, null, "入力した通りに1行ずつ渡します") { m ->
                         EditorField(
                             label = "標準入力 (任意)",
@@ -991,7 +1012,7 @@ private fun TestCaseCard(
                         )
                     },
                 )
-                if (!manual) TryBox("出力例で試す") {
+                if (!manual && runs) TryBox("出力例で試す") {
                     EditorField(
                         label = "出力例",
                         value = testCase.sampleOutput,
@@ -1010,9 +1031,9 @@ private fun TestCaseCard(
     }
 }
 
-/** テストの方法 (提出された main を実行する / 自分で書いたテストコードを実行する) を、説明付きのカードで選ぶ */
+/** テストの方法 (main を実行する / テストコードを実行する / メソッド呼び出しを確認する) を、説明付きのカードで選ぶ */
 @Composable
-private fun TestMethodChooser(useTestCode: Boolean, onSelect: (Boolean) -> Unit) {
+private fun TestMethodChooser(method: TestMethod, onSelect: (TestMethod) -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Text(
             "テストの方法",
@@ -1024,17 +1045,24 @@ private fun TestMethodChooser(useTestCode: Boolean, onSelect: (Boolean) -> Unit)
             horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             TestMethodOption(
-                selected = !useTestCode,
+                selected = method == TestMethod.Main,
                 title = "提出された main を実行",
                 description = "引数と標準入力を渡して、提出されたプログラムの出力を確かめます",
-                onClick = { onSelect(false) },
+                onClick = { onSelect(TestMethod.Main) },
                 modifier = Modifier.weight(1f).fillMaxHeight(),
             )
             TestMethodOption(
-                selected = useTestCode,
+                selected = method == TestMethod.TestCode,
                 title = "テストコードを実行",
                 description = "自分で書いた Java のコードから提出されたクラスを呼び、その出力を確かめます",
-                onClick = { onSelect(true) },
+                onClick = { onSelect(TestMethod.TestCode) },
+                modifier = Modifier.weight(1f).fillMaxHeight(),
+            )
+            TestMethodOption(
+                selected = method == TestMethod.Calls,
+                title = "メソッド呼び出しを確認",
+                description = "実行せずに、指定したメソッドを main から直接呼んでいるか確かめます",
+                onClick = { onSelect(TestMethod.Calls) },
                 modifier = Modifier.weight(1f).fillMaxHeight(),
             )
         }
@@ -1080,7 +1108,10 @@ private fun TestMethodOption(
 
 /** 閉じたカードに表示する概要 */
 private fun testCaseSummary(testCase: TestCaseDraft, manual: Boolean): String = buildList {
-    if (testCase.useTestCode) add("テストコード ${testCase.testCode.lines().count { it.isNotBlank() }} 行")
+    if (testCase.method == TestMethod.Calls) {
+        return "呼び出しの確認: " + testCase.calls.lines().filter { it.isNotBlank() }.joinToString(", ") { it.trim() }
+    }
+    if (testCase.method == TestMethod.TestCode) add("テストコード ${testCase.testCode.lines().count { it.isNotBlank() }} 行")
     if (testCase.arg.isNotBlank()) add("引数: ${testCase.arg}")
     val inputLines = testCase.input.lines().count { it.isNotEmpty() }
     if (inputLines > 0) add("入力 $inputLines 行")
@@ -1222,9 +1253,11 @@ private class RowField(
 /**
  * 入力欄を横に並べ、欄の高さを揃える。
  * 補足文を欄の中に入れると、補足文の行数の違いで欄の高さがずれるため、補足文は別の行にまとめる。
+ * null の欄は表示しない (条件によって出す欄)
  */
 @Composable
-private fun FieldRow(vararg fields: RowField) {
+private fun FieldRow(vararg optionalFields: RowField?) {
+    val fields = optionalFields.filterNotNull()
     Column {
         Row(
             Modifier.fillMaxWidth().height(IntrinsicSize.Min),

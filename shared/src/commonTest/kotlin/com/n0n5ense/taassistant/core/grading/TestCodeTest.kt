@@ -61,8 +61,8 @@ class TestCodeTest {
         var key = 0L
         val draft = config.toDraft { key++ }
         val code = draft.tasks[0].testCases[1]
-        assertTrue(code.useTestCode)
-        assertFalse(draft.tasks[0].testCases[0].useTestCode)
+        assertEquals(com.n0n5ense.taassistant.core.config.TestMethod.TestCode, code.method)
+        assertEquals(com.n0n5ense.taassistant.core.config.TestMethod.Main, draft.tasks[0].testCases[0].method)
         assertTrue(draft.validate().isEmpty())
         assertEquals(config, draft.toConfig())
 
@@ -73,7 +73,7 @@ class TestCodeTest {
         assertEquals(listOf(DraftField.TestCode), withCase(code.copy(testCode = " \n")).validate().map { it.field })
 
         // main を実行するテストに切り替えると、テストコードは保存しない
-        val switched = withCase(code.copy(useTestCode = false)).toConfig()
+        val switched = withCase(code.copy(method = com.n0n5ense.taassistant.core.config.TestMethod.Main)).toConfig()
         assertNull(switched.tasks.getValue(TaskName("電卓")).testcase.single().testCode)
 
         // 改行は LF に揃え、末尾は改行1つにする

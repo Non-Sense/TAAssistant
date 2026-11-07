@@ -38,17 +38,31 @@ data class TestCaseDraft(
     val expect: String = "",
     /** 正規表現を試すための出力例 (保存されない) */
     val sampleOutput: String = "",
-    /** true: 自分で書いたテストコードを実行する */
-    val useTestCode: Boolean = false,
+    /** テストの方法 */
+    val method: TestMethod = TestMethod.Main,
     /** テストコード (Java) */
     val testCode: String = "",
     /** 確認すること (手動で判定する課題) */
     val check: String = "",
+    /** main から直接呼んでいるか確認するメソッド (1行 = 1つ) */
+    val calls: String = "",
 )
+
+/** テストケースのテストの方法 */
+enum class TestMethod {
+    /** 提出されたクラスの main を実行する */
+    Main,
+
+    /** 自分で書いたテストコードを実行する */
+    TestCode,
+
+    /** main から直接呼んでいるメソッドを確認する (実行しない) */
+    Calls,
+}
 
 enum class DraftField {
     CompileTimeout, RunningTimeout, OutputFileName, SubmissionDirPattern,
-    TaskName, Words, TestCaseName, Expect, TestCode,
+    TaskName, Words, TestCaseName, Expect, TestCode, Calls,
 }
 
 data class DraftIssue(
@@ -79,7 +93,12 @@ fun Config.toDraft(newKey: () -> Long): ConfigDraft = ConfigDraft(
                     arg = tc.arg,
                     input = tc.input.joinToString("\n"),
                     expect = tc.expect.joinToString("\n"),
-                    useTestCode = tc.testCode != null,
+                    method = when {
+                        tc.calls.isNotEmpty() -> TestMethod.Calls
+                        tc.testCode != null -> TestMethod.TestCode
+                        else -> TestMethod.Main
+                    },
+                    calls = tc.calls.joinToString("\n"),
                     testCode = tc.testCode.orEmpty(),
                     check = tc.check,
                 )
@@ -105,7 +124,8 @@ fun ConfigDraft.toConfig(): Config = Config(
                     arg = tc.arg,
                     input = tc.input.inputLines(),
                     expect = tc.expect.nonBlankLines(),
-                    testCode = if (tc.useTestCode) tc.testCode.replace("\r", "").trimEnd() + "\n" else null,
+                    testCode = if (tc.method == TestMethod.TestCode) tc.testCode.replace("\r", "").trimEnd() + "\n" else null,
+                    calls = if (tc.method == TestMethod.Calls) tc.calls.nonBlankLines().map { it.trim() } else emptyList(),
                     check = tc.check.replace("\r", "").trimEnd(),
                 )
             },
@@ -197,8 +217,11 @@ fun ConfigDraft.validate(): List<DraftIssue> = buildList {
                     add(DraftIssue(DraftField.Expect, "${i + 1}行目: $it", task.key, tc.key))
                 }
             }
-            if (tc.useTestCode && tc.testCode.isBlank()) {
+            if (tc.method == TestMethod.TestCode && tc.testCode.isBlank()) {
                 add(DraftIssue(DraftField.TestCode, "テストコードを入力してください", task.key, tc.key))
+            }
+            if (tc.method == TestMethod.Calls && tc.calls.nonBlankLines().isEmpty()) {
+                add(DraftIssue(DraftField.Calls, "確認するメソッドを1行に1つ入力してください (例: Arrays.sort)", task.key, tc.key))
             }
         }
     }

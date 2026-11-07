@@ -278,6 +278,7 @@ class JvmGradingToolkit : GradingToolkit {
         toolchain: JavaToolchain,
         timeoutMillis: Long,
     ): Execution {
+        if (testCase.calls.isNotEmpty()) return checkMainCalls(target, toolchain)
         val testCode = testCase.testCode ?: return runJava(target.classPath, target.mainClass, testCase, toolchain, timeoutMillis)
         return executeTestCode(target, testCase, testCode, toolchain, timeoutMillis)
     }
@@ -334,6 +335,39 @@ class JvmGradingToolkit : GradingToolkit {
         } finally {
             dir.deleteRecursively()
         }
+    }
+
+    /** main から直接呼んでいるメソッドを javap で調べる (実行はしない)。結果は標準出力にも1行ずつ入れる */
+    private suspend fun checkMainCalls(target: CompileOutcome.Success, toolchain: JavaToolchain): Execution {
+        val command = listOf(
+            toolchain.executable("javap"),
+            "-J-Duser.language=en",
+            "-J-Dstdout.encoding=UTF-8",
+            "-J-Dstderr.encoding=UTF-8",
+            "-c", "-p",
+            "-cp", target.classPath,
+            target.mainClass,
+        )
+        val output = runProcess(command, null, JAVAP_TIMEOUT_MILLIS)
+        val stdout = decodeText(output.stdout)
+        val stderr = decodeText(output.stderr)
+        val failed = output.timedOut || output.exitCode != 0
+        val calls = if (failed) null else CallCheck.parseJavap(stdout, target.mainClass)
+        return Execution(
+            command = command.toCommandLine(),
+            stdout = calls?.joinToString("\n").orEmpty(),
+            stderr = when {
+                failed -> listOf(stderr, stdout).filter(String::isNotBlank).joinToString("\n")
+                    .ifBlank { "javap を実行できませんでした" }
+                calls == null -> "${target.mainClass} に main メソッドが見つかりません"
+                else -> ""
+            },
+            exitCode = output.exitCode,
+            timedOut = output.timedOut,
+            elapsedMillis = output.elapsedNanos / 1_000_000.0,
+            // main が無ければ「何も呼んでいない」として WA にする
+            mainCalls = if (failed) null else calls.orEmpty(),
+        )
     }
 
     private suspend fun runJava(
@@ -421,6 +455,7 @@ class JvmGradingToolkit : GradingToolkit {
         const val SOURCES_DIR = "sources"
         const val COMPILE_DIR = "compile"
         const val TEST_CODE_COMPILE_TIMEOUT_MILLIS = 60_000L
+        const val JAVAP_TIMEOUT_MILLIS = 60_000L
     }
 }
 

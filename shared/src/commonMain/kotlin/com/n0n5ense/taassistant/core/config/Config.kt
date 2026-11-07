@@ -103,6 +103,11 @@ data class TestCase(
     val testCode: String? = null,
     /** 確認すること (手動で判定する課題で、判定するときに表示する) */
     val check: String = "",
+    /**
+     * main から直接呼んでいるか確認するメソッド。空でなければ実行せず、すべて呼んでいれば AC、そうでなければ WA。
+     * 書き方は [com.n0n5ense.taassistant.core.grading.CallCheck.matches]
+     */
+    val calls: List<String> = emptyList(),
 ) {
     @Transient
     val expectRegex: List<Regex> = expect.map(::Regex)
