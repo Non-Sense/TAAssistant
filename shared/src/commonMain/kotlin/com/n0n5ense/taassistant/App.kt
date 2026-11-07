@@ -122,7 +122,7 @@ fun App(
                                 onEditConfig = { open(Screen.ConfigEditor) },
                                 // 新しいコンフィグでエディタを開く (未保存の変更があればエディタで確認する)
                                 onNewConfig = {
-                                    editorViewModel.requestNew()
+                                    editorViewModel.startNew(state.setup.configPath)
                                     open(Screen.ConfigEditor)
                                 },
                                 onOpenLog = { open(Screen.Log) },

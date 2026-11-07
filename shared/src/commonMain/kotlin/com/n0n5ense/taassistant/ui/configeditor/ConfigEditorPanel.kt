@@ -1186,7 +1186,18 @@ private fun DiscardDialog(state: ConfigEditorState, viewModel: ConfigEditorViewM
         icon = { Icon(Icons.Filled.Warning, contentDescription = null) },
         title = { Text("変更を保存しますか?") },
         text = {
-            Text("「${state.path?.let(::fileNameOf) ?: "新しいコンフィグ"}」への変更は保存されていません。保存しないと変更は失われます。")
+            val current = state.path?.let(::fileNameOf) ?: "新しいコンフィグ"
+            Text(
+                when (val action = state.pending) {
+                    // 採点の設定でコンフィグを切り替えた後に開いたとき
+                    is PendingAction.Load ->
+                        "採点に使うコンフィグが「${fileNameOf(action.path)}」に切り替わりました。" +
+                            "編集中の「$current」への変更は保存されていません。保存しないと変更は失われます。" +
+                            "キャンセルすると「$current」の編集を続けます。"
+
+                    else -> "「$current」への変更は保存されていません。保存しないと変更は失われます。"
+                },
+            )
         },
         confirmButton = { TextButton(onClick = viewModel::saveAndContinue) { Text("保存") } },
         dismissButton = {

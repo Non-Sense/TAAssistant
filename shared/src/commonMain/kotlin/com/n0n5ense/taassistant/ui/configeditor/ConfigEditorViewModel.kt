@@ -50,7 +50,16 @@ data class MigrationInfo(
 )
 
 /** 未保存の変更を破棄してよいか確認中の操作 */
-enum class PendingAction { New, Open }
+sealed interface PendingAction {
+    /** 新しいコンフィグを作る */
+    data object New : PendingAction
+
+    /** ファイルを選んで開く */
+    data object Open : PendingAction
+
+    /** 採点に使うコンフィグ [path] を開く (採点の設定でコンフィグを切り替えたとき) */
+    data class Load(val path: String) : PendingAction
+}
 
 data class ConfigEditorState(
     val initialized: Boolean = false,
@@ -89,14 +98,20 @@ class ConfigEditorViewModel(private val services: PlatformServices) : ViewModel(
     private var nextKey = 1L
     private fun newKey(): Long = nextKey++
 
+    /** 前回エディタを開いたときの、採点に使うコンフィグのパス (切り替わったかを判断する) */
+    private var gradingPath: String? = null
+
     // ------------------------------------------------------------ ファイル
 
     /**
-     * エディタを開いたときに呼ぶ。採点設定のコンフィグを読み込む。
-     * 未保存の変更があるときは、別のファイルに切り替えずに今の内容を残す。
+     * エディタを開いたときに呼ぶ。採点に使うコンフィグ [configPath] を読み込む。
+     * - 前回開いたときから採点に使うコンフィグが変わっていなければ、編集中の内容をそのまま表示する
+     * - 変わっていれば、そのコンフィグを開く。編集中の内容に未保存の変更があれば、保存するか確認してから開く
      */
     fun openForEditing(configPath: String) {
         val s = state.value
+        val changed = configPath != gradingPath
+        gradingPath = configPath
         when {
             !s.initialized -> {
                 _state.update { it.copy(initialized = true) }
@@ -106,8 +121,20 @@ class ConfigEditorViewModel(private val services: PlatformServices) : ViewModel(
                 ) else resetToNew()
             }
 
-            configPath.isNotBlank() && configPath != s.path && !s.isDirty -> load(configPath)
+            !changed || configPath.isBlank() || configPath == s.path -> Unit
+            s.isDirty -> _state.update { it.copy(pending = PendingAction.Load(configPath)) }
+            else -> load(configPath)
         }
+    }
+
+    /**
+     * 採点画面の「新規作成…」から呼ぶ。新しいコンフィグを作る (未保存の変更があれば確認する)。
+     * [configPath] (採点に使うコンフィグ) は開き直さない
+     */
+    fun startNew(configPath: String) {
+        gradingPath = configPath
+        if (!state.value.initialized) _state.update { it.copy(initialized = true) }
+        requestNew()
     }
 
     fun requestNew() = runOrConfirm(PendingAction.New)
@@ -134,6 +161,7 @@ class ConfigEditorViewModel(private val services: PlatformServices) : ViewModel(
 
     private fun perform(action: PendingAction) = when (action) {
         PendingAction.New -> resetToNew()
+        is PendingAction.Load -> load(action.path)
         PendingAction.Open -> {
             val current = state.value.path
             viewModelScope.launch {

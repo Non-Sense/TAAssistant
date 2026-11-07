@@ -13,6 +13,7 @@ import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performKeyInput
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performTextReplacement
 import androidx.compose.ui.test.pressKey
 import androidx.compose.ui.test.runComposeUiTest
 import androidx.lifecycle.ViewModelStore
@@ -60,6 +61,9 @@ class NavigationUiTest {
     /** 保存先を選ぶダイアログの代わりに返すパス */
     private val savePaths = ArrayDeque<String>()
 
+    /** ファイルを開くダイアログの代わりに返すパス */
+    private val openPaths = ArrayDeque<String>()
+
     /** 前回開いていたプロジェクトとして [projectPath] を返す。実際の Preferences には触れない */
     private fun services(projectPath: String): PlatformServices {
         val real = createPlatformServices()
@@ -72,6 +76,9 @@ class NavigationUiTest {
                 suggestedName: String?
             ): String? =
                 savePaths.removeFirstOrNull()
+
+            override suspend fun pickFile(title: String, initial: String?, extensions: List<String>): String? =
+                openPaths.removeFirstOrNull()
 
             override val settings: SettingsStore = object : SettingsStore {
                 override fun get(key: String): String? = values[key]
@@ -88,6 +95,90 @@ class NavigationUiTest {
 
     private fun SemanticsNodeInteractionsProvider.exists(matcher: androidx.compose.ui.test.SemanticsMatcher) =
         onAllNodes(matcher).fetchSemanticsNodes().isNotEmpty()
+
+    @Test
+    fun opensSwitchedConfigInEditor() = runComposeUiTest {
+        // コンフィグを切り替えた後に「編集…」を押すと、切り替えた後のコンフィグを開く
+        File(dir, "a.yaml").writeText("version: 2\ntasks:\n  課題A:\n    word: [A]\n")
+        File(dir, "b.yaml").writeText("version: 2\ntasks:\n  課題B:\n    word: [B]\n")
+        val project = File(dir, "test.taa")
+        project.writeBytes(ProjectCodec.encode(ProjectFile(settings = ProjectSettings(configPath = "a.yaml"))))
+        val owner = object : ViewModelStoreOwner {
+            override val viewModelStore = ViewModelStore()
+        }
+        setContent {
+            CompositionLocalProvider(LocalViewModelStoreOwner provides owner) {
+                App(services(project.path))
+            }
+        }
+        val editButton = hasText("編集…").and(hasClickAction())
+        val backButton = hasContentDescription("採点画面に戻る (Esc)")
+        val taskA = hasText("課題A").and(hasClickAction())
+        val taskB = hasText("課題B").and(hasClickAction())
+        waitUntil(timeoutMillis = 10_000) { exists(editButton) }
+
+        // a.yaml を開く
+        onNode(editButton).performClick()
+        waitUntil(timeoutMillis = 10_000) { exists(backButton) && exists(taskA) }
+        onNode(backButton).performClick()
+        waitUntil(timeoutMillis = 10_000) { exists(editButton) }
+
+        // 「参照」で b.yaml に切り替える (提出物ディレクトリ・コンフィグ・JDK の順)
+        openPaths += File(dir, "b.yaml").absolutePath
+        onAllNodes(hasText("参照").and(hasClickAction()))[1].performClick()
+        waitUntil(timeoutMillis = 10_000) { exists(hasText(File(dir, "b.yaml").absolutePath)) }
+
+        // 編集すると b.yaml を開いている
+        onNode(editButton).performClick()
+        waitUntil(timeoutMillis = 10_000) { exists(backButton) && exists(taskB) }
+        assertFalse(exists(taskA))
+        onNode(backButton).performClick()
+        waitUntil(timeoutMillis = 10_000) { exists(editButton) }
+
+        // 手で入力して a.yaml に戻しても、a.yaml を開く
+        val configField = { onAllNodes(androidx.compose.ui.test.hasSetTextAction())[1] }
+        configField().performTextReplacement(File(dir, "a.yaml").absolutePath)
+        onNode(editButton).performClick()
+        waitUntil(timeoutMillis = 10_000) { exists(backButton) && exists(taskA) }
+        assertFalse(exists(taskB))
+
+        // 編集中のコンフィグに未保存の変更があるときに切り替えると、黙って前のコンフィグを開かずに確認する
+        onNode(taskA).performClick()
+        val nameField = androidx.compose.ui.test.hasSetTextAction().and(hasText("課題A"))
+        waitUntil(timeoutMillis = 10_000) { exists(nameField) }
+        onNode(nameField).performTextReplacement("課題A2")
+        waitUntil(timeoutMillis = 10_000) { exists(hasText("課題A2").and(hasClickAction())) }
+        onNode(backButton).performClick()
+        waitUntil(timeoutMillis = 10_000) { exists(editButton) }
+        configField().performTextReplacement(File(dir, "b.yaml").absolutePath)
+        onNode(editButton).performClick()
+        val dialog = hasText("採点に使うコンフィグが「b.yaml」に切り替わりました。", substring = true)
+        waitUntil(timeoutMillis = 10_000) { exists(dialog) }
+        // キャンセル: 編集中の a.yaml を続ける
+        onNode(hasText("キャンセル")).performClick()
+        waitUntil(timeoutMillis = 10_000) { !exists(dialog) && exists(hasText("課題A2").and(hasClickAction())) }
+        // もう一度開いても (切り替えていないので) 聞かない
+        onNode(backButton).performClick()
+        waitUntil(timeoutMillis = 10_000) { exists(editButton) }
+        onNode(editButton).performClick()
+        waitUntil(timeoutMillis = 10_000) { exists(backButton) && exists(hasText("課題A2").and(hasClickAction())) }
+        assertFalse(exists(dialog))
+
+        // a.yaml → b.yaml と切り替え直して、今度は「保存しない」: b.yaml を開く (a.yaml は変更しない)
+        onNode(backButton).performClick()
+        waitUntil(timeoutMillis = 10_000) { exists(editButton) }
+        configField().performTextReplacement(File(dir, "a.yaml").absolutePath)
+        onNode(editButton).performClick()
+        waitUntil(timeoutMillis = 10_000) { exists(backButton) }
+        onNode(backButton).performClick()
+        waitUntil(timeoutMillis = 10_000) { exists(editButton) }
+        configField().performTextReplacement(File(dir, "b.yaml").absolutePath)
+        onNode(editButton).performClick()
+        waitUntil(timeoutMillis = 10_000) { exists(dialog) }
+        onNode(hasText("保存しない")).performClick()
+        waitUntil(timeoutMillis = 10_000) { exists(taskB) && !exists(dialog) }
+        assertTrue(File(dir, "a.yaml").readText().contains("課題A:"), "保存しないので a.yaml は変わらない")
+    }
 
     @Test
     fun opensConfigEditorAndGoesBack() = runComposeUiTest {
