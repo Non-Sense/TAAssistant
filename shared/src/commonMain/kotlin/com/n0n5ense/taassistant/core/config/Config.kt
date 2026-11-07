@@ -73,6 +73,11 @@ data class Task(
     /** ソース中にこの文字列のどれかが含まれていれば、この課題の提出とはみなさない */
     val excludeWord: List<String> = emptyList(),
     val testcase: List<TestCase> = emptyList(),
+    /**
+     * true なら採点時にテストを実行せず、詳細から1件ずつ実行して手動で判定する (GUI の課題など)。
+     * 結果は未判定 (??) になり、[TestCase.check] を見ながら判定する
+     */
+    val manual: Boolean = false,
 )
 
 @Serializable
@@ -96,6 +101,8 @@ data class TestCase(
      * (詳しくは [com.n0n5ense.taassistant.core.grading.TestCode])
      */
     val testCode: String? = null,
+    /** 確認すること (手動で判定する課題で、判定するときに表示する) */
+    val check: String = "",
 ) {
     @Transient
     val expectRegex: List<Regex> = expect.map(::Regex)

@@ -171,6 +171,30 @@ class TestCodeIntegrationTest {
     }
 
     @Test
+    fun replacesClassNamePlaceholder() {
+        // 学生によってクラス名が違う (Calculator / Calc / mypkg.Dentaku) ときも、同じテストコードで呼べる
+        val testCase = config.tasks.getValue(TaskName("電卓")).testcase.first().copy(
+            testCode = listOf(
+                "\${class} c = new \${class}(10);",
+                "System.out.println(c.add(2) + \" \" + \${qualifiedClass}.class.getName());",
+            ).joinToString(nl),
+            expect = listOf("^.*12\\s+[\\w.]+\\s*$"),
+        )
+        val renamed = listOf(
+            "Calculator.java" to calculator,
+            "Calc.java" to calculator.map { it.replace("Calculator", "Calc") },
+            "mypkg/Dentaku.java" to listOf("package mypkg;") + calculator.map { it.replace("Calculator", "Dentaku") },
+        )
+        val names = renamed.map { (path, lines) ->
+            val target = compile(path, lines).outcome as CompileOutcome.Success
+            val execution = runBlocking { toolkit.execute(target, testCase, JavaToolchain(), config.runningTimeout) }
+            assertEquals(Judge.AC, AutoJudge.judge(testCase, execution), execution.toString())
+            execution.stdout.trim().lines().last().substringAfter(' ')
+        }
+        assertEquals(listOf("Calculator", "Calc", "mypkg.Dentaku"), names)
+    }
+
+    @Test
     fun runsThroughPipeline() {
         val compiled = compile("Calculator.java", calculator)
         val results = runBlocking {

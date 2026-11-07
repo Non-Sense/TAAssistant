@@ -3,6 +3,7 @@ package com.n0n5ense.taassistant.ui.main
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.n0n5ense.taassistant.core.config.TaskName
+import com.n0n5ense.taassistant.core.config.TestCase
 import com.n0n5ense.taassistant.core.grading.GradingOutcome
 import com.n0n5ense.taassistant.core.grading.GradingPipeline
 import com.n0n5ense.taassistant.core.grading.GradingRequest
@@ -11,6 +12,7 @@ import com.n0n5ense.taassistant.core.grading.LastStep
 import com.n0n5ense.taassistant.core.grading.LogLevel
 import com.n0n5ense.taassistant.core.grading.PipelineEvent
 import com.n0n5ense.taassistant.core.grading.Stage
+import com.n0n5ense.taassistant.core.model.CompileOutcome
 import com.n0n5ense.taassistant.core.model.Judge
 import com.n0n5ense.taassistant.core.model.SourceEncoding
 import com.n0n5ense.taassistant.core.model.TestResult
@@ -21,8 +23,8 @@ import com.n0n5ense.taassistant.core.project.ProjectSettings
 import com.n0n5ense.taassistant.core.project.TaskAssignment
 import com.n0n5ense.taassistant.core.project.carryOverManualJudges
 import com.n0n5ense.taassistant.core.project.replaceSourceResults
-import com.n0n5ense.taassistant.core.project.unlinkTask
 import com.n0n5ense.taassistant.core.project.replaceWithAssigned
+import com.n0n5ense.taassistant.core.project.unlinkTask
 import com.n0n5ense.taassistant.core.report.ReportFormat
 import com.n0n5ense.taassistant.core.report.buildReport
 import com.n0n5ense.taassistant.platform.PlatformServices
@@ -42,6 +44,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import kotlin.time.Duration.Companion.milliseconds
 
 /** 画面で編集する採点の設定。プロジェクトファイルに保存する */
 typealias SetupState = ProjectSettings
@@ -97,6 +100,8 @@ data class UiState(
     val assignments: Map<String, List<TaskName>> = emptyMap(),
     /** 課題を割り当ててテストを実行中のソース (displayPath) */
     val assigningSource: String? = null,
+    /** 手動で判定する課題で、1件ずつ実行中の結果の id */
+    val manualRunId: Int? = null,
     val selectedId: Int? = null,
     val export: ExportStatus? = null,
     /** 詳細タブの表示状態 (タブを切り替えても残す) */
@@ -133,6 +138,7 @@ class AppViewModel(
     private val _state = MutableStateFlow(UiState(recentProjects = loadRecentProjects()))
     val state: StateFlow<UiState> = _state.asStateFlow()
     private var runJob: Job? = null
+    private var manualRunJob: Job? = null
 
     private val saveMutex = Mutex()
     private var lastSaved: SaveSnapshot? = null
@@ -142,7 +148,7 @@ class AppViewModel(
         viewModelScope.launch {
             state.map { it.saveSnapshot() }
                 .distinctUntilChanged()
-                .debounce(500)
+                .debounce(500.milliseconds)
                 .collect { snapshot -> if (snapshot != null) save(snapshot) }
         }
         // 前回開いていたプロジェクトを開く
@@ -200,6 +206,7 @@ class AppViewModel(
             flushSave()
             services.settings.put(KEY_LAST_PROJECT, "")
             lastSaved = null
+            stopManualRun()
             _state.update { UiState(recentProjects = it.recentProjects) }
         }
     }
@@ -306,6 +313,7 @@ class AppViewModel(
             }
             val outcome = file.outcome
             val results = outcome?.results.orEmpty()
+            stopManualRun()
             val loaded = UiState(
                 project = OpenProject(path),
                 recentProjects = state.value.recentProjects,
@@ -447,6 +455,7 @@ class AppViewModel(
 
     fun start() {
         if (runJob?.isActive == true || state.value.assigningSource != null) return
+        stopManualRun()
         val before = state.value
         val setup = before.setup
         val problem = when {
@@ -574,6 +583,50 @@ class AppViewModel(
         _state.update { s ->
             s.copy(results = s.results.map { if (it.id == id) it.copy(manualJudge = judge) else it })
         }
+    }
+
+    /** [result] が手動で判定する課題 (GUI の課題など) の結果か */
+    fun isManualTask(result: TestResult): Boolean {
+        val task = result.taskName ?: return false
+        return state.value.outcome?.config?.tasks?.get(task)?.manual == true
+    }
+
+    /**
+     * 手動で判定する課題の結果を1件実行する (時間制限なし。ウィンドウを閉じるなどでプログラムが終わるまで待つ)。
+     * 実行中は他の結果を実行できない。終わったら出力を結果に記録する (判定は手動で行う)
+     */
+    fun runManually(resultId: Int) {
+        val s = state.value
+        if (s.isRunning || s.manualRunId != null) return
+        val result = s.results.firstOrNull { it.id == resultId } ?: return
+        if (!isManualTask(result)) return
+        val target = result.compile as? CompileOutcome.Success ?: return
+        val testCase = result.testCase ?: TestCase(name = "")
+        _state.update { it.copy(manualRunId = resultId) }
+        appendLog("${result.source.displayPath} を実行しています (${result.taskName}: ${testCase.name.ifEmpty { "-" }})", LogLevel.Info)
+        manualRunJob = viewModelScope.launch {
+            try {
+                val execution = services.toolkit.execute(target, testCase, JavaToolchain(s.setup.jdkBinDir.trim()), -1)
+                _state.update { st ->
+                    st.copy(results = st.results.map { if (it.id == resultId) it.copy(execution = execution) else it })
+                }
+                appendLog("${result.source.displayPath} の実行が終わりました (終了コード ${execution.exitCode ?: "-"})", LogLevel.Info)
+            } catch (e: CancellationException) {
+                appendLog("${result.source.displayPath} の実行を停止しました", LogLevel.Warning)
+                throw e
+            } catch (e: Exception) {
+                appendLog("${result.source.displayPath} を実行できませんでした: ${e.message}", LogLevel.Error)
+            } finally {
+                _state.update { if (it.manualRunId == resultId) it.copy(manualRunId = null) else it }
+            }
+        }
+    }
+
+    /** 実行中のプログラムを強制終了する */
+    fun stopManualRun() {
+        manualRunJob?.cancel()
+        manualRunJob = null
+        _state.update { it.copy(manualRunId = null) }
     }
 
     /** 課題を特定できなかった (NF) ソースに課題を割り当て、その課題のテストを実行する */

@@ -24,6 +24,8 @@ data class TaskDraft(
     val words: String = "",
     val excludeWords: String = "",
     val testCases: List<TestCaseDraft> = emptyList(),
+    /** true: 採点時に実行せず、1件ずつ実行して手動で判定する (GUI の課題など) */
+    val manual: Boolean = false,
 )
 
 data class TestCaseDraft(
@@ -40,6 +42,8 @@ data class TestCaseDraft(
     val useTestCode: Boolean = false,
     /** テストコード (Java) */
     val testCode: String = "",
+    /** 確認すること (手動で判定する課題) */
+    val check: String = "",
 )
 
 enum class DraftField {
@@ -67,6 +71,7 @@ fun Config.toDraft(newKey: () -> Long): ConfigDraft = ConfigDraft(
             name = name.name,
             words = task.word.joinToString("\n"),
             excludeWords = task.excludeWord.joinToString("\n"),
+            manual = task.manual,
             testCases = task.testcase.map { tc ->
                 TestCaseDraft(
                     key = newKey(),
@@ -76,6 +81,7 @@ fun Config.toDraft(newKey: () -> Long): ConfigDraft = ConfigDraft(
                     expect = tc.expect.joinToString("\n"),
                     useTestCode = tc.testCode != null,
                     testCode = tc.testCode.orEmpty(),
+                    check = tc.check,
                 )
             },
         )
@@ -92,6 +98,7 @@ fun ConfigDraft.toConfig(): Config = Config(
         TaskName(task.name.trim()) to Task(
             word = task.words.nonBlankLines(),
             excludeWord = task.excludeWords.nonBlankLines(),
+            manual = task.manual,
             testcase = task.testCases.map { tc ->
                 TestCase(
                     name = tc.name.trim(),
@@ -99,6 +106,7 @@ fun ConfigDraft.toConfig(): Config = Config(
                     input = tc.input.inputLines(),
                     expect = tc.expect.nonBlankLines(),
                     testCode = if (tc.useTestCode) tc.testCode.replace("\r", "").trimEnd() + "\n" else null,
+                    check = tc.check.replace("\r", "").trimEnd(),
                 )
             },
         )

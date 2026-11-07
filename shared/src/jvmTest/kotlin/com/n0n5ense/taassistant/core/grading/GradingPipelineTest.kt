@@ -356,6 +356,54 @@ class GradingPipelineTest {
     }
 
     @Test
+    fun doesNotRunManualTasks() {
+        // 手動で判定する課題 (GUI の課題など) は実行せず、テストケースごとに未判定にする
+        val manualYaml = listOf(
+            "version: 2",
+            "tasks:",
+            "  GUI:",
+            "    word: [GUI]",
+            "    manual: true",
+            "    testcase:",
+            "      - name: count",
+            "        check: ボタンでカウントが増える",
+            "      - name: reset",
+            "  課題2:",
+            "    word: [課題2]",
+            "    testcase:",
+            "      - name: s",
+            "        expect: [\"^ok$\"]",
+        ).joinToString(nl)
+        val gui = source("s1", "Gui.java")
+        val ce = source("s1", "GuiCe.java")
+        val auto = source("s1", "Auto.java")
+        val fake = FakeToolkit(
+            listOf(student("s1")),
+            mapOf(StudentId("s1") to listOf(gui to "GUI", ce to "GUI", auto to "課題2")),
+            compileOutcomes = mapOf(ce.path to CompileOutcome.Failure("javac", SourceEncoding.UTF8, null, "error")),
+            run = { _, _ -> exec("ok") },
+        )
+        val toolkit = object : GradingToolkit by fake {
+            override suspend fun readTextFile(path: String): String = manualYaml
+        }
+        val outcome = runBlocking { GradingPipeline(toolkit).run(request()) { } }
+
+        data class Row(val file: String, val case: String?, val judge: Judge, val executed: Boolean)
+        assertEquals(
+            listOf(
+                Row("Gui.java", "count", Judge.Unknown, false),
+                Row("Gui.java", "reset", Judge.Unknown, false),
+                Row("GuiCe.java", null, Judge.CE, false),
+                Row("Auto.java", "s", Judge.AC, true),
+            ),
+            outcome.results.map { Row(it.source.fileName, it.testCase?.name, it.autoJudge, it.execution != null) },
+        )
+        assertEquals("ボタンでカウントが増える", outcome.results[0].testCase?.check)
+        // 実行したのは自動の課題だけ
+        assertEquals(listOf("execute Auto s 5000"), fake.calls.filter { it.startsWith("execute") })
+    }
+
+    @Test
     fun judgesTimeoutAsTle() {
         val a = source("s1", "A.java")
         val toolkit = FakeToolkit(

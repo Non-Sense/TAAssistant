@@ -293,7 +293,7 @@ class JvmGradingToolkit : GradingToolkit {
         toolchain: JavaToolchain,
         timeoutMillis: Long,
     ): Execution = withContext(Dispatchers.IO) {
-        val prepared = TestCode.prepare(testCode, target.packageName)
+        val prepared = TestCode.prepare(testCode, target.packageName, target.className)
         val code = prepared.source
         val dir = Files.createTempDirectory("taa-test-").toFile()
         try {

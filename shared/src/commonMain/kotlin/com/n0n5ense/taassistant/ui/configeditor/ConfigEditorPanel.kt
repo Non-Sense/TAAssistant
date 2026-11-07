@@ -25,6 +25,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -58,6 +59,7 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.VerticalDivider
@@ -758,10 +760,10 @@ private fun TaskEditor(
 
         FormSection(
             "テストケース (${task.testCases.size})",
-            description = if (task.testCases.isEmpty()) {
-                "テストケースがありません。この課題の提出はコンパイルのみ行われます。"
-            } else {
-                "想定出力の正規表現にすべてマッチすれば AC です。"
+            description = when {
+                task.manual -> "採点時には実行しません。詳細から1件ずつ実行し、「確認すること」を見ながら手動で判定します。"
+                task.testCases.isEmpty() -> "テストケースがありません。この課題の提出はコンパイルのみ行われます。"
+                else -> "想定出力の正規表現にすべてマッチすれば AC です。"
             },
             trailing = {
                 if (task.testCases.size > 1) {
@@ -777,6 +779,10 @@ private fun TaskEditor(
                 }
             },
         ) {
+            ManualTaskSwitch(
+                manual = task.manual,
+                onChange = { v -> viewModel.updateTask(task.key) { it.copy(manual = v) } },
+            )
             task.testCases.forEachIndexed { caseIndex, testCase ->
                 val nameError = issue(DraftField.TestCaseName, testCase.key)
                 val expectError = issue(DraftField.Expect, testCase.key)
@@ -789,6 +795,7 @@ private fun TaskEditor(
                     nameError = nameError,
                     expectError = expectError,
                     testCodeError = testCodeError,
+                    manual = task.manual,
                     // エラーのあるカードは閉じられないようにする (エラーが見えなくなるため)
                     expanded = testCase.key !in collapsed || hasError,
                     onToggle = {
@@ -826,6 +833,7 @@ private fun TestCaseCard(
     nameError: String?,
     expectError: String?,
     testCodeError: String?,
+    manual: Boolean,
     expanded: Boolean,
     onToggle: () -> Unit,
     onChange: ((TestCaseDraft) -> TestCaseDraft) -> Unit,
@@ -862,7 +870,7 @@ private fun TestCaseCard(
             )
             if (!expanded) {
                 Text(
-                    testCaseSummary(testCase),
+                    testCaseSummary(testCase, manual),
                     style = MaterialTheme.typography.bodySmall,
                     fontFamily = FontFamily.Monospace,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -933,8 +941,10 @@ private fun TestCaseCard(
                         onValueChange = { v -> onChange { it.copy(testCode = v) } },
                         error = testCodeError,
                         hint = "「public class 名前」を含めばクラス全体、含まなければ main の中身として扱います。" +
-                            "package を書かなければ提出されたクラスと同じパッケージに入れます。結果は標準出力に出し、想定出力で確かめます",
-                        placeholder = "Calculator c = new Calculator(10);\nSystem.out.println(c.add(1, 2));",
+                            "package を書かなければ提出されたクラスと同じパッケージに入れます。" +
+                            "${'$'}{class} は提出されたクラスの名前 (パッケージ付きは ${'$'}{qualifiedClass}) に置き換えます。" +
+                            "結果は標準出力に出し、想定出力で確かめます",
+                        placeholder = "${'$'}{class} c = new ${'$'}{class}(10);\nSystem.out.println(c.add(1, 2));",
                         monospaced = true,
                         minLines = 6,
                         modifier = Modifier.fillMaxWidth(),
@@ -952,7 +962,19 @@ private fun TestCaseCard(
                             modifier = m,
                         )
                     },
-                    RowField(
+                    if (manual) {
+                        RowField(1.5f, null, "判定するときに表示します") { m ->
+                            EditorField(
+                                label = "確認すること",
+                                value = testCase.check,
+                                onValueChange = { v -> onChange { it.copy(check = v) } },
+                                placeholder = "ボタンを押すとカウントが1増える",
+                                minLines = 3,
+                                supportingInside = false,
+                                modifier = m,
+                            )
+                        }
+                    } else RowField(
                         1.5f,
                         expectError,
                         "1行に1つ。改行を空白に置換した標準出力「全体」にマッチさせます"
@@ -969,7 +991,7 @@ private fun TestCaseCard(
                         )
                     },
                 )
-                TryBox("出力例で試す") {
+                if (!manual) TryBox("出力例で試す") {
                     EditorField(
                         label = "出力例",
                         value = testCase.sampleOutput,
@@ -1057,14 +1079,42 @@ private fun TestMethodOption(
 }
 
 /** 閉じたカードに表示する概要 */
-private fun testCaseSummary(testCase: TestCaseDraft): String = buildList {
+private fun testCaseSummary(testCase: TestCaseDraft, manual: Boolean): String = buildList {
     if (testCase.useTestCode) add("テストコード ${testCase.testCode.lines().count { it.isNotBlank() }} 行")
     if (testCase.arg.isNotBlank()) add("引数: ${testCase.arg}")
     val inputLines = testCase.input.lines().count { it.isNotEmpty() }
     if (inputLines > 0) add("入力 $inputLines 行")
-    val expects = testCase.expect.lines().count { it.isNotBlank() }
-    add("正規表現 $expects 個")
+    if (manual) {
+        testCase.check.lineSequence().firstOrNull { it.isNotBlank() }?.let { add("確認: ${it.trim()}") }
+    } else {
+        val expects = testCase.expect.lines().count { it.isNotBlank() }
+        add("正規表現 $expects 個")
+    }
 }.joinToString("  ·  ")
+
+/** 課題の採点方法: 自動 / 1件ずつ実行して手動で判定する (GUI の課題など) */
+@Composable
+private fun ManualTaskSwitch(manual: Boolean, onChange: (Boolean) -> Unit) {
+    Row(
+        Modifier.fillMaxWidth()
+            .toggleable(value = manual, role = Role.Switch, onValueChange = onChange)
+            .padding(vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text("1件ずつ実行して手動で判定する", style = MaterialTheme.typography.titleSmall)
+            Text(
+                "GUI の課題など、出力で判定できないときに使います。採点時には実行せず未判定 (??) にし、" +
+                    "詳細の「実行」でプログラムを起動して、画面を確認してから判定します",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        // 行全体で切り替えるので、スイッチ自体はクリックを受けない
+        Switch(checked = manual, onCheckedChange = null)
+    }
+}
 
 // ---------------------------------------------------------------- YAML
 

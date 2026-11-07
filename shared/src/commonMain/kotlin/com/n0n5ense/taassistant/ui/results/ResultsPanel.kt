@@ -164,7 +164,7 @@ internal fun ResultsPanel(
 @Composable
 internal fun KeyHint(modifier: Modifier = Modifier) {
     Text(
-        "キー操作: A=AC  W=WA  T=TLE  R=RE  C=CE (判定して次へ) / U・BackSpace=自動判定に戻す / ↑↓・J K=移動",
+        "キー操作: A=AC  W=WA  T=TLE  R=RE  C=CE (判定して次へ) / U・BackSpace=自動判定に戻す / ↑↓・J K=移動 / Enter=実行 (手動で判定する課題)",
         style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
         modifier = modifier.padding(horizontal = 14.dp, vertical = 2.dp),
@@ -259,6 +259,8 @@ internal fun ResultBrowser(
                 Key.R -> judgeAndAdvance(Judge.RE)
                 Key.C -> judgeAndAdvance(Judge.CE)
                 Key.Backspace, Key.U -> latestSelectedId?.let { viewModel.setManualJudge(it, null) }
+                // 手動で判定する課題 (GUI の課題など) を1件実行する
+                Key.Enter, Key.NumPadEnter -> latestSelectedId?.let(viewModel::runManually)
                 else -> return@handler false
             }
             true
@@ -305,6 +307,18 @@ internal fun ResultBrowser(
                 tasks = outcome.config.tasks.keys.toList(),
                 assigning = state.assigningSource == selected.source.displayPath,
                 canAssign = !state.isRunning && state.assigningSource == null,
+                manualTask = viewModel.isManualTask(selected),
+                manualRunId = state.manualRunId,
+                canRun = !state.isRunning,
+                // 実行・停止のボタンは押すと入れ替わってフォーカスが消えるので、キー操作できるよう一覧に戻す
+                onRun = {
+                    viewModel.runManually(selected.id)
+                    runCatching { focusRequester.requestFocus() }
+                },
+                onStop = {
+                    viewModel.stopManualRun()
+                    runCatching { focusRequester.requestFocus() }
+                },
                 onOpenStudent = onOpenStudent?.let { open -> { open(selected.studentId) } },
                 modifier = Modifier.weight(1f).fillMaxHeight(),
             )
@@ -683,6 +697,11 @@ private fun ResultDetail(
     tasks: List<TaskName>,
     assigning: Boolean,
     canAssign: Boolean,
+    manualTask: Boolean,
+    manualRunId: Int?,
+    canRun: Boolean,
+    onRun: () -> Unit,
+    onStop: () -> Unit,
     onOpenStudent: (() -> Unit)?,
     modifier: Modifier = Modifier,
 ) {
@@ -751,6 +770,18 @@ private fun ResultDetail(
                 onRestore = { viewModel.restoreAutoTasks(result.id) },
             )
 
+            // ---- 手動で判定する課題: 1件ずつ実行する
+            if (manualTask) {
+                ManualRunCard(
+                    result = result,
+                    running = manualRunId == result.id,
+                    otherRunning = manualRunId != null && manualRunId != result.id,
+                    enabled = canRun,
+                    onRun = onRun,
+                    onStop = onStop,
+                )
+            }
+
             // ---- 判定
             Row(
                 verticalAlignment = Alignment.CenterVertically,
@@ -759,7 +790,11 @@ private fun ResultDetail(
                 Text("判定", style = MaterialTheme.typography.labelLarge)
                 JudgeBadge(result.judge, manual = result.manualJudge != null)
                 Text(
-                    if (result.manualJudge != null) "(手動 / 自動判定は ${result.autoJudge})" else "(自動判定)",
+                    when {
+                        result.manualJudge != null -> "(手動 / 自動判定は ${result.autoJudge})"
+                        manualTask && result.autoJudge == Judge.Unknown -> "(実行して、下のボタンかキーで判定してください)"
+                        else -> "(自動判定)"
+                    },
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -833,7 +868,10 @@ private fun ResultDetail(
                     "標準入力",
                     testCase.input.joinToString("\n")
                 )
-                TextBlock("想定 (正規表現)", testCase.expect.joinToString("\n"))
+                // 手動で判定する課題では、想定出力は書いたときだけ表示する
+                if (!manualTask || testCase.expect.isNotEmpty()) {
+                    TextBlock("想定 (正規表現)", testCase.expect.joinToString("\n"))
+                }
             }
             if (execution != null) {
                 val testCodeError = execution.testCodeError
@@ -874,6 +912,62 @@ private fun ResultDetail(
             TextBlock(result.source.fileName, source ?: "読み込み中…")
         }
         AppVerticalScrollbar(scroll, Modifier.align(Alignment.CenterEnd).fillMaxHeight())
+    }
+}
+
+/**
+ * 手動で判定する課題 (GUI の課題など) の実行。確認することを表示し、プログラムを1件ずつ起動・停止する。
+ * 時間制限はなく、ウィンドウを閉じるなどでプログラムが終わると出力を記録する
+ */
+@Composable
+private fun ManualRunCard(
+    result: TestResult,
+    running: Boolean,
+    otherRunning: Boolean,
+    enabled: Boolean,
+    onRun: () -> Unit,
+    onStop: () -> Unit,
+) {
+    val colors = MaterialTheme.colorScheme
+    val runnable = result.compile is CompileOutcome.Success
+    Surface(
+        shape = MaterialTheme.shapes.medium,
+        color = colors.secondaryContainer,
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("手動で判定する課題", style = MaterialTheme.typography.titleSmall, color = colors.onSecondaryContainer)
+            val check = result.testCase?.check.orEmpty()
+            if (check.isNotBlank()) {
+                Text("確認すること", style = MaterialTheme.typography.labelMedium, color = colors.onSecondaryContainer)
+                SelectionContainer {
+                    Text(check.trimEnd(), style = MaterialTheme.typography.bodyMedium, color = colors.onSecondaryContainer)
+                }
+            }
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                if (running) {
+                    OutlinedButton(onClick = onStop) { Text("停止") }
+                    CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                    Text(
+                        "実行中です。確認したらプログラムを終了してください (終了すると出力を記録します)",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = colors.onSecondaryContainer,
+                    )
+                } else {
+                    Button(onClick = onRun, enabled = enabled && runnable && !otherRunning) { Text("実行 (Enter)") }
+                    Text(
+                        when {
+                            !runnable -> "コンパイルできていないため実行できません"
+                            otherRunning -> "他のプログラムを実行中です"
+                            result.execution != null -> "実行済み (終了コード ${result.execution.exitCode ?: "-"})。もう一度実行できます"
+                            else -> "引数と標準入力を渡して起動します。時間制限はありません"
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = colors.onSecondaryContainer,
+                    )
+                }
+            }
+        }
     }
 }
 

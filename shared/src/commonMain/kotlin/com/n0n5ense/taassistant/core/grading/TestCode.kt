@@ -7,10 +7,18 @@ package com.n0n5ense.taassistant.core.grading
  * - `public class 名前` を含めばクラス全体として扱う (import やヘルパーメソッドも書ける)
  * - 含まなければ main の中身として扱い、[DEFAULT_CLASS_NAME] クラスの main で包む
  * - `package` 宣言が無ければ、提出されたクラスと同じパッケージに入れる (package-private のメソッドも呼べる)
+ * - [CLASS_PLACEHOLDER] は提出されたクラスの名前、[QUALIFIED_CLASS_PLACEHOLDER] はパッケージ付きの名前に置き換える
+ *   (学生によってクラス名が違っても、同じテストコードで呼べるように)
  */
 object TestCode {
     /** main の中身だけを書いたときのクラス名 */
     const val DEFAULT_CLASS_NAME = "TaaTest__"
+
+    /** 提出されたクラスの名前 (ソースのファイル名 = public class の名前) */
+    const val CLASS_PLACEHOLDER = "\${class}"
+
+    /** 提出されたクラスのパッケージ付きの名前 (package を自分で書いたテストコードから呼ぶとき) */
+    const val QUALIFIED_CLASS_PLACEHOLDER = "\${qualifiedClass}"
 
     private val publicClassRegex =
         Regex("""\bpublic\s+(?:(?:final|abstract|strictfp)\s+)*class\s+([A-Za-z_$][\w$]*)""")
@@ -21,9 +29,15 @@ object TestCode {
         val fileName: String get() = "$className.java"
     }
 
-    /** @param studentPackage 提出されたクラスのパッケージ (無ければ null) */
-    fun prepare(code: String, studentPackage: String?): Prepared {
-        val text = code.replace("\r\n", "\n").replace('\r', '\n').trimEnd() + "\n"
+    /**
+     * @param studentPackage 提出されたクラスのパッケージ (無ければ null)
+     * @param studentClass 提出されたクラスの名前 (プレースホルダーを置き換える)
+     */
+    fun prepare(code: String, studentPackage: String?, studentClass: String): Prepared {
+        val qualified = studentPackage?.let { "$it.$studentClass" } ?: studentClass
+        val text = code.replace("\r\n", "\n").replace('\r', '\n').trimEnd()
+            .replace(QUALIFIED_CLASS_PLACEHOLDER, qualified)
+            .replace(CLASS_PLACEHOLDER, studentClass) + "\n"
         val header = studentPackage?.let { "package $it;\n\n" }.orEmpty()
         val className = publicClassRegex.find(text)?.groupValues?.get(1)
             ?: return Prepared(

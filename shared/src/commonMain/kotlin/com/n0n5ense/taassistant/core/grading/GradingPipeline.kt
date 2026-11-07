@@ -158,7 +158,7 @@ class GradingPipeline(private val toolkit: GradingToolkit) {
             source = plan.compiled.source,
             compile = plan.compiled.outcome,
             taskName = plan.taskName,
-            testCase = (plan as? TestPlan.Execute)?.testCase,
+            testCase = plan.recordedTestCase,
             autoJudge = Judge.Unknown,
             assigned = plan.assigned,
         )
@@ -177,10 +177,24 @@ class GradingPipeline(private val toolkit: GradingToolkit) {
 }
 
 /** 1つのソース × 課題 × テストケース で行うこと */
-private sealed class TestPlan(val compiled: CompiledSource, val taskName: TaskName?, val assigned: Boolean) {
-    /** 実行せずに判定が決まる (NF / CE / IE / テストケースなし) */
-    class Fixed(compiled: CompiledSource, taskName: TaskName?, assigned: Boolean, val judge: Judge) :
-        TestPlan(compiled, taskName, assigned)
+private sealed class TestPlan(
+    val compiled: CompiledSource,
+    val taskName: TaskName?,
+    val assigned: Boolean,
+    /** 結果に記録するテストケース */
+    val recordedTestCase: TestCase?,
+) {
+    /**
+     * 実行せずに判定が決まる (NF / CE / IE / テストケースなし)。
+     * 手動で判定する課題では、テストケースごとに未判定の結果を作る
+     */
+    class Fixed(
+        compiled: CompiledSource,
+        taskName: TaskName?,
+        assigned: Boolean,
+        val judge: Judge,
+        testCase: TestCase? = null,
+    ) : TestPlan(compiled, taskName, assigned, testCase)
 
     /** 実行して判定する */
     class Execute(
@@ -189,12 +203,13 @@ private sealed class TestPlan(val compiled: CompiledSource, val taskName: TaskNa
         taskName: TaskName,
         val testCase: TestCase,
         assigned: Boolean,
-    ) : TestPlan(compiled, taskName, assigned)
+    ) : TestPlan(compiled, taskName, assigned, testCase)
 }
 
 /**
  * [tasks] としてテストする計画を立てる。課題がなければ NF、コンパイルに失敗していれば課題ごとに CE / IE、
  * テストケースのない課題は未判定とし、それ以外はテストケースごとに実行する。
+ * 手動で判定する課題 ([com.n0n5ense.taassistant.core.config.Task.manual]) は実行せず、テストケースごとに未判定にする
  */
 private fun planFor(config: Config, compiled: CompiledSource, tasks: List<TaskName>, assigned: Boolean): List<TestPlan> {
     if (tasks.isEmpty()) return listOf(TestPlan.Fixed(compiled, null, assigned, Judge.NF))
@@ -202,9 +217,18 @@ private fun planFor(config: Config, compiled: CompiledSource, tasks: List<TaskNa
         when (val outcome = compiled.outcome) {
             is CompileOutcome.Error -> listOf(TestPlan.Fixed(compiled, task, assigned, Judge.IE))
             is CompileOutcome.Failure -> listOf(TestPlan.Fixed(compiled, task, assigned, Judge.CE))
-            is CompileOutcome.Success -> config.tasks.getValue(task).testcase
-                .map<TestCase, TestPlan> { TestPlan.Execute(compiled, outcome, task, it, assigned) }
-                .ifEmpty { listOf(TestPlan.Fixed(compiled, task, assigned, Judge.Unknown)) }
+            is CompileOutcome.Success -> {
+                val definition = config.tasks.getValue(task)
+                definition.testcase
+                    .map<TestCase, TestPlan> {
+                        if (definition.manual) {
+                            TestPlan.Fixed(compiled, task, assigned, Judge.Unknown, testCase = it)
+                        } else {
+                            TestPlan.Execute(compiled, outcome, task, it, assigned)
+                        }
+                    }
+                    .ifEmpty { listOf(TestPlan.Fixed(compiled, task, assigned, Judge.Unknown)) }
+            }
         }
     }
 }

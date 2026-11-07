@@ -85,7 +85,7 @@ class TestCodeTest {
 
     @Test
     fun wrapsMainBody() {
-        val prepared = TestCode.prepare("Calculator c = new Calculator(10);" + nl + nl + "c.run();", "calc.core")
+        val prepared = TestCode.prepare("Calculator c = new Calculator(10);" + nl + nl + "c.run();", "calc.core", "Calculator")
         assertEquals("calc.core", prepared.packageName)
         assertEquals("TaaTest__", prepared.className)
         assertEquals("calc.core.TaaTest__", prepared.mainClass)
@@ -107,9 +107,33 @@ class TestCodeTest {
         )
 
         // 提出されたクラスにパッケージが無ければ、パッケージ宣言も付けない
-        val plain = TestCode.prepare("run();", null)
+        val plain = TestCode.prepare("run();", null, "Calculator")
         assertEquals("TaaTest__", plain.mainClass)
         assertTrue(plain.source.startsWith("public class TaaTest__ {"), plain.source)
+    }
+
+    @Test
+    fun replacesClassPlaceholders() {
+        // 学生によってクラス名が違っても、同じテストコードで呼べる
+        val body = "\${class} c = new \${class}(10);" + nl + "System.out.println(\${qualifiedClass}.class);"
+        val calc = TestCode.prepare(body, "calc.core", "Calc")
+        assertTrue(calc.source.contains("        Calc c = new Calc(10);" + nl), calc.source)
+        assertTrue(calc.source.contains("System.out.println(calc.core.Calc.class);"), calc.source)
+        // パッケージが無ければ、パッケージ付きの名前もクラス名だけ
+        val plain = TestCode.prepare(body, null, "Calculator")
+        assertTrue(plain.source.contains("Calculator c = new Calculator(10);"), plain.source)
+        assertTrue(plain.source.contains("System.out.println(Calculator.class);"), plain.source)
+
+        // クラス全体を書くとき: 自分のクラス名にも使える (置き換えてから public class を探す)
+        val whole = TestCode.prepare(
+            "package my.test;" + nl + "public class \${class}Test {" + nl +
+                "    public static void main(String[] a) { new \${qualifiedClass}(); }" + nl + "}",
+            "calc.core",
+            "Calc",
+        )
+        assertEquals("CalcTest", whole.className)
+        assertEquals("my.test.CalcTest", whole.mainClass)
+        assertTrue(whole.source.contains("new calc.core.Calc();"), whole.source)
     }
 
     @Test
@@ -120,18 +144,18 @@ class TestCodeTest {
             "    public static void main(String[] args) { }",
             "}",
         ).joinToString(nl)
-        val prepared = TestCode.prepare(code, "calc.core")
+        val prepared = TestCode.prepare(code, "calc.core", "Calculator")
         assertEquals("CalcTest", prepared.className)
         assertEquals("calc.core.CalcTest", prepared.mainClass)
         assertEquals("package calc.core;" + nl + nl + code + nl, prepared.source)
 
         // package を書いていればそのまま使う
-        val own = TestCode.prepare("package my.test;" + nl + code, "calc.core")
+        val own = TestCode.prepare("package my.test;" + nl + code, "calc.core", "Calculator")
         assertEquals("my.test.CalcTest", own.mainClass)
         assertEquals("package my.test;" + nl + code + nl, own.source)
 
         // public でないクラスだけなら main の中身として扱う (ローカルクラスなど)
-        val local = TestCode.prepare("class Helper { }" + nl + "new Helper();", null)
+        val local = TestCode.prepare("class Helper { }" + nl + "new Helper();", null, "Calculator")
         assertEquals("TaaTest__", local.className)
     }
 
