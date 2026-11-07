@@ -1,5 +1,6 @@
 package com.n0n5ense.taassistant.core.model
 
+import com.n0n5ense.taassistant.core.config.ExecutionPermission
 import com.n0n5ense.taassistant.core.config.TaskName
 import com.n0n5ense.taassistant.core.config.TestCase
 import kotlinx.serialization.SerialName
@@ -147,8 +148,10 @@ data class SuspiciousCall(
     val call: String,
     /** 呼び出している場所 (パッケージ付きのクラス名.メソッド名) */
     val location: String,
-    /** 種類 (外部プログラムの起動・ファイルの書き込みなど) */
+    /** 種類の表示名 (外部プログラムの起動・ファイルの書き込みなど) */
     val category: String,
+    /** 種類。null は検査できなかったなど、種類で許可できないもの */
+    val permission: ExecutionPermission? = null,
 )
 
 /** 1ソースファイル × 1課題 × 1テストケース の結果 */

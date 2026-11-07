@@ -1,6 +1,7 @@
 package com.n0n5ense.taassistant.core.grading
 
 import com.n0n5ense.taassistant.core.config.ConfigParser
+import com.n0n5ense.taassistant.core.config.ExecutionPermission
 import com.n0n5ense.taassistant.core.config.TaskName
 import com.n0n5ense.taassistant.core.config.toConfig
 import com.n0n5ense.taassistant.core.config.toDraft
@@ -80,11 +81,11 @@ class SafetyCheckTest {
         val calls = Javap.parse(javap).flatMap { it.calls }
         assertEquals(
             listOf(
-                SuspiciousCall("java.lang.Runtime.exec", "app.Main.run", "外部プログラムの起動"),
+                SuspiciousCall("java.lang.Runtime.exec", "app.Main.run", "外部プログラムの起動", ExecutionPermission.Process),
                 // ファイル名を渡した PrintWriter はファイルに書く (System.out などに書くものは対象外)
-                SuspiciousCall("java.io.PrintWriter.<init>", "app.Main.<clinit>", "ファイルの書き込み・削除"),
-                SuspiciousCall("java.io.File.delete", "app.Main\$Helper.delete", "ファイルの書き込み・削除"),
-                SuspiciousCall("java.lang.Class.forName", "app.Other.main", "リフレクション・動的なコードの実行"),
+                SuspiciousCall("java.io.PrintWriter.<init>", "app.Main.<clinit>", "ファイルの書き込み・削除", ExecutionPermission.FileWrite),
+                SuspiciousCall("java.io.File.delete", "app.Main\$Helper.delete", "ファイルの書き込み・削除", ExecutionPermission.FileWrite),
+                SuspiciousCall("java.lang.Class.forName", "app.Other.main", "リフレクション・動的なコードの実行", ExecutionPermission.Reflection),
             ),
             SafetyCheck.detect(calls),
         )
@@ -103,13 +104,32 @@ class SafetyCheckTest {
     @Test
     fun allowsCallsPerTask() {
         val suspicious = listOf(
-            SuspiciousCall("java.io.FileWriter.<init>", "A.main", "ファイルの書き込み・削除"),
-            SuspiciousCall("java.nio.file.Files.write", "A.save", "ファイルの書き込み・削除"),
+            SuspiciousCall("java.io.FileWriter.<init>", "A.main", "ファイルの書き込み・削除", ExecutionPermission.FileWrite),
+            SuspiciousCall("java.nio.file.Files.write", "A.save", "ファイルの書き込み・削除", ExecutionPermission.FileWrite),
         )
         assertEquals(suspicious, SafetyCheck.blocking(suspicious, emptyList()))
         assertEquals(listOf(suspicious[1]), SafetyCheck.blocking(suspicious, listOf("new FileWriter")))
         assertEquals(emptyList(), SafetyCheck.blocking(suspicious, listOf("new FileWriter", "Files.*")))
         assertEquals(emptyList(), SafetyCheck.blocking(suspicious, listOf("FileWriter.<init>", "java.nio.file.Files.write")))
+    }
+
+    @Test
+    fun allowsCategoriesPerTask() {
+        val exec = SuspiciousCall("java.lang.Runtime.exec", "A.main", "外部プログラムの起動", ExecutionPermission.Process)
+        val write = SuspiciousCall("java.io.FileWriter.<init>", "A.main", "ファイルの書き込み・削除", ExecutionPermission.FileWrite)
+        // 検査できなかったものは、種類では許可できない
+        val unknown = SuspiciousCall("(検査できませんでした)", "", "検査できませんでした")
+        val all = listOf(exec, write, unknown)
+        assertEquals(listOf(exec, unknown), SafetyCheck.blocking(all, emptyList(), setOf(ExecutionPermission.FileWrite)))
+        assertEquals(listOf(unknown), SafetyCheck.blocking(all, emptyList(), ExecutionPermission.entries))
+        // 種類と個別の呼び出しを組み合わせられる
+        assertEquals(listOf(unknown), SafetyCheck.blocking(all, listOf("Runtime.exec"), setOf(ExecutionPermission.FileWrite)))
+        // 課題の設定から
+        val task = com.n0n5ense.taassistant.core.config.Task(word = listOf("x"), allow = listOf(ExecutionPermission.Process))
+        assertEquals(listOf(write, unknown), SafetyCheck.blocking(all, task))
+        assertEquals(all, SafetyCheck.blocking(all, null))
+        // すべての規則に種類がある
+        assertTrue(SafetyCheck.defaultRules.map { it.category }.toSet() == ExecutionPermission.entries.toSet())
     }
 
     @Test
@@ -119,15 +139,28 @@ class SafetyCheckTest {
             "tasks:",
             "  ファイル:",
             "    word: [File]",
+            "    allow: [network, fileWrite]",
             "    allowCalls: [new FileWriter, 'Files.*']",
         ).joinToString(nl)
         val config = ConfigParser.parse(yaml)
+        assertEquals(
+            listOf(ExecutionPermission.Network, ExecutionPermission.FileWrite),
+            config.tasks.getValue(TaskName("ファイル")).allow,
+        )
+        val encoded = ConfigParser.encode(config)
+        assertTrue("    allow:" + nl + "    - 'network'" + nl + "    - 'fileWrite'" in encoded, encoded)
         assertEquals(listOf("new FileWriter", "Files.*"), config.tasks.getValue(TaskName("ファイル")).allowCalls)
         assertEquals(config, ConfigParser.parse(ConfigParser.encode(config)))
         var key = 0L
         val draft = config.toDraft { key++ }
         assertEquals("new FileWriter" + nl + "Files.*", draft.tasks[0].allowCalls)
-        assertEquals(config, draft.toConfig())
+        assertEquals(setOf(ExecutionPermission.Network, ExecutionPermission.FileWrite), draft.tasks[0].allow)
+        // エディタで保存すると、種類はいつも同じ順に並べる
+        assertEquals(
+            listOf(ExecutionPermission.FileWrite, ExecutionPermission.Network),
+            draft.toConfig().tasks.values.single().allow,
+        )
+        assertEquals(config.copy(tasks = config.tasks.mapValues { it.value.copy(allow = it.value.allow.sortedBy { p -> p.ordinal }) }), draft.toConfig())
         val trimmed = draft.copy(tasks = listOf(draft.tasks[0].copy(allowCalls = "  Files.write " + nl + nl)))
         assertEquals(listOf("Files.write"), trimmed.toConfig().tasks.values.single().allowCalls)
         // 書かなければ YAML にも出さない

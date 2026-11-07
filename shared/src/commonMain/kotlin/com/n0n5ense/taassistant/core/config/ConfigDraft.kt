@@ -26,6 +26,8 @@ data class TaskDraft(
     val testCases: List<TestCaseDraft> = emptyList(),
     /** true: 採点時に実行せず、1件ずつ実行して手動で判定する (GUI の課題など) */
     val manual: Boolean = false,
+    /** 確認なしで実行してよい呼び出しの種類 */
+    val allow: Set<ExecutionPermission> = emptySet(),
     /** 確認なしで実行してよい呼び出し (1行 = 1つ) */
     val allowCalls: String = "",
 )
@@ -88,6 +90,7 @@ fun Config.toDraft(newKey: () -> Long): ConfigDraft = ConfigDraft(
             words = task.word.joinToString("\n"),
             excludeWords = task.excludeWord.joinToString("\n"),
             manual = task.manual,
+            allow = task.allow.toSet(),
             allowCalls = task.allowCalls.joinToString("\n"),
             testCases = task.testcase.map { tc ->
                 TestCaseDraft(
@@ -121,6 +124,8 @@ fun ConfigDraft.toConfig(): Config = Config(
             word = task.words.nonBlankLines(),
             excludeWord = task.excludeWords.nonBlankLines(),
             manual = task.manual,
+            // 並びはいつも同じにする (YAML の差分が出ないように)
+            allow = ExecutionPermission.entries.filter { it in task.allow },
             allowCalls = task.allowCalls.nonBlankLines().map { it.trim() },
             testcase = task.testCases.map { tc ->
                 TestCase(

@@ -79,8 +79,13 @@ data class Task(
      */
     val manual: Boolean = false,
     /**
-     * 確認なしで実行してよい呼び出し (ファイルに書く課題など)。
-     * 危ない可能性がある呼び出し ([com.n0n5ense.taassistant.core.grading.SafetyCheck]) のうち、これに当たるものは止めない
+     * 確認なしで実行してよい呼び出しの種類 (ファイルに書く課題なら fileWrite など)。
+     * 危ない可能性がある呼び出し ([com.n0n5ense.taassistant.core.grading.SafetyCheck]) のうち、この種類のものは止めない
+     */
+    val allow: List<ExecutionPermission> = emptyList(),
+    /**
+     * 確認なしで実行してよい呼び出し (呼び出し単位で細かく許可するとき)。
+     * 危ない可能性がある呼び出しのうち、これに当たるものは止めない
      */
     val allowCalls: List<String> = emptyList(),
 )

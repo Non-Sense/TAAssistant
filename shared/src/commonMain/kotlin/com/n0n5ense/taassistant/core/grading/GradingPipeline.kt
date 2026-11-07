@@ -276,7 +276,7 @@ private fun planFor(
             is CompileOutcome.Failure -> listOf(TestPlan.Fixed(compiled, task, assigned, Judge.CE))
             is CompileOutcome.Success -> {
                 val definition = config.tasks.getValue(task)
-                val held = !approved && SafetyCheck.blocking(outcome.suspicious, definition.allowCalls).isNotEmpty()
+                val held = !approved && SafetyCheck.blocking(outcome.suspicious, definition).isNotEmpty()
                 definition.testcase
                     .map<TestCase, TestPlan> {
                         when {

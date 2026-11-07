@@ -1000,7 +1000,7 @@ private fun SafetyCard(
                         Text("実行しています…", style = MaterialTheme.typography.bodySmall, color = content)
                     } else {
                         Text(
-                            "課題で使ってよい呼び出しなら、コンフィグの「確認なしで実行してよい呼び出し」に書くと、次から保留しません",
+                            "課題で使ってよいものなら、コンフィグの課題の「詳細設定」で実行を許可すると、次から保留しません",
                             style = MaterialTheme.typography.bodySmall,
                             color = content,
                         )

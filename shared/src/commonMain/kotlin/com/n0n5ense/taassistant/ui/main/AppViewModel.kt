@@ -626,8 +626,8 @@ class AppViewModel(
                 } else {
                     compiled
                 }
-                val allow = result.taskName?.let { s.outcome?.config?.tasks?.get(it)?.allowCalls }.orEmpty()
-                if (!isApproved(result.source, target) && SafetyCheck.blocking(target.suspicious, allow).isNotEmpty()) {
+                val task = result.taskName?.let { s.outcome?.config?.tasks?.get(it) }
+                if (!isApproved(result.source, target) && SafetyCheck.blocking(target.suspicious, task).isNotEmpty()) {
                     appendLog("${result.source.displayPath} には危ない可能性がある呼び出しがあるため、実行を保留しました", LogLevel.Warning)
                     _state.update { st ->
                         st.copy(results = st.results.map { if (it.id == resultId) it.copy(compile = target, held = true) else it })

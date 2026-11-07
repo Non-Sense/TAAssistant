@@ -58,6 +58,22 @@ class NavigationUiTest {
         dir.deleteRecursively()
     }
 
+    /**
+     * アプリが保存したプロジェクトファイルを読む。
+     * 自動保存がファイルを置き換えている最中だと Windows では読めないことがあるので、読めるまで少し待つ
+     */
+    private fun readProject(file: File): ProjectFile {
+        val deadline = System.currentTimeMillis() + 10_000
+        while (true) {
+            try {
+                return ProjectCodec.decode(file.readBytes())
+            } catch (e: java.io.IOException) {
+                if (System.currentTimeMillis() > deadline) throw e
+                Thread.sleep(50)
+            }
+        }
+    }
+
     /** 保存先を選ぶダイアログの代わりに返すパス */
     private val savePaths = ArrayDeque<String>()
 
@@ -485,7 +501,7 @@ class NavigationUiTest {
         savePaths += settingsOnly.path
         menu("設定だけを複製…")
         waitUntil(timeoutMillis = 10_000) { settingsOnly.isFile && exists(hasText("開く")) }
-        val copied = ProjectCodec.decode(settingsOnly.readBytes())
+        val copied = readProject(settingsOnly)
         assertNull(copied.outcome)
         // 保存先が変わるので、相対パスは新しい場所を基準に作り直す (フォルダの外になるので絶対パス)
         assertEquals(
@@ -499,7 +515,7 @@ class NavigationUiTest {
         savePaths += duplicate.path
         menu("複製…")
         waitUntil(timeoutMillis = 10_000) { duplicate.isFile }
-        val duplicated = ProjectCodec.decode(duplicate.readBytes())
+        val duplicated = readProject(duplicate)
         assertEquals(outcome, duplicated.outcome)
         assertEquals("config.yaml", duplicated.settings.configPath)
 
@@ -508,7 +524,7 @@ class NavigationUiTest {
         savePaths += renamed.path
         menu("別名で保存…")
         waitUntil(timeoutMillis = 10_000) { renamed.isFile && exists(hasText("第1回 改")) }
-        assertEquals("submissions", ProjectCodec.decode(renamed.readBytes()).settings.rootDir)
+        assertEquals("submissions", readProject(renamed).settings.rootDir)
         assertTrue(project.isFile, "元のファイルは残る")
     }
 

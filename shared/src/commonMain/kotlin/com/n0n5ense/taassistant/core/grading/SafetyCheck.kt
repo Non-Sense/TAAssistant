@@ -1,5 +1,7 @@
 package com.n0n5ense.taassistant.core.grading
 
+import com.n0n5ense.taassistant.core.config.ExecutionPermission
+import com.n0n5ense.taassistant.core.config.Task
 import com.n0n5ense.taassistant.core.model.SuspiciousCall
 
 /** コンパイル済みのクラスの中の、メソッドの呼び出し1つ */
@@ -94,13 +96,13 @@ object SafetyCheck {
      * @param pattern [CallCheck.matches] の書き方 (`クラス.*` はそのクラスのすべてのメソッド)
      * @param firstParams 最初の引数の型がこのどれかのときだけ (例: `PrintWriter(String)` はファイルに書く)
      */
-    data class Rule(val category: String, val pattern: String, val firstParams: Set<String>? = null)
+    data class Rule(val category: ExecutionPermission, val pattern: String, val firstParams: Set<String>? = null)
 
-    private const val PROCESS = "外部プログラムの起動"
-    private const val NATIVE = "ネイティブコードの読み込み"
-    private const val FILE = "ファイルの書き込み・削除"
-    private const val NETWORK = "ネットワーク"
-    private const val DYNAMIC = "リフレクション・動的なコードの実行"
+    private val PROCESS = ExecutionPermission.Process
+    private val NATIVE = ExecutionPermission.Native
+    private val FILE = ExecutionPermission.FileWrite
+    private val NETWORK = ExecutionPermission.Network
+    private val DYNAMIC = ExecutionPermission.Reflection
     private val pathParams = setOf("Ljava/lang/String;", "Ljava/io/File;", "Ljava/nio/file/Path;")
 
     val defaultRules: List<Rule> = buildList {
@@ -158,10 +160,24 @@ object SafetyCheck {
                 CallCheck.matches(rule.pattern, site.call) &&
                     (rule.firstParams == null || rule.firstParams.any { site.descriptor.startsWith("($it") })
             } ?: return@mapNotNull null
-            SuspiciousCall(call = site.call, location = site.location, category = rule.category)
+            SuspiciousCall(call = site.call, location = site.location, category = rule.category.label, permission = rule.category)
         }.distinct()
 
-    /** [allowCalls] (課題で許可した呼び出し) で許可されていない、危ない可能性がある呼び出し */
-    fun blocking(suspicious: List<SuspiciousCall>, allowCalls: List<String>): List<SuspiciousCall> =
-        suspicious.filter { s -> allowCalls.none { CallCheck.matches(it, s.call) } }
+    /**
+     * 課題で許可していない、危ない可能性がある呼び出し。
+     * @param allow 課題で許可した種類 ([com.n0n5ense.taassistant.core.config.Task.allow])
+     * @param allowCalls 課題で許可した呼び出し ([com.n0n5ense.taassistant.core.config.Task.allowCalls])
+     */
+    fun blocking(
+        suspicious: List<SuspiciousCall>,
+        allowCalls: List<String>,
+        allow: Collection<ExecutionPermission> = emptyList(),
+    ): List<SuspiciousCall> =
+        suspicious.filter { s ->
+            (s.permission == null || s.permission !in allow) && allowCalls.none { CallCheck.matches(it, s.call) }
+        }
+
+    /** 課題 [task] で許可していない、危ない可能性がある呼び出し */
+    fun blocking(suspicious: List<SuspiciousCall>, task: Task?): List<SuspiciousCall> =
+        blocking(suspicious, task?.allowCalls.orEmpty(), task?.allow.orEmpty())
 }

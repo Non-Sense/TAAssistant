@@ -1,6 +1,7 @@
 package com.n0n5ense.taassistant.core.grading
 
 import com.n0n5ense.taassistant.core.config.ConfigParser
+import com.n0n5ense.taassistant.core.config.ExecutionPermission
 import com.n0n5ense.taassistant.core.config.SubmissionDirName
 import com.n0n5ense.taassistant.core.config.TaskName
 import com.n0n5ense.taassistant.core.config.TestCase
@@ -439,7 +440,10 @@ class GradingPipelineTest {
         )
         // コンパイル結果に、見つかった呼び出しとソースのハッシュを記録する
         val evilOutcome = outcome.compiled.single { it.source == evil }.outcome as CompileOutcome.Success
-        assertEquals(listOf(SuspiciousCall("java.lang.Runtime.exec", "Evil.main", "外部プログラムの起動")), evilOutcome.suspicious)
+        assertEquals(
+            listOf(SuspiciousCall("java.lang.Runtime.exec", "Evil.main", "外部プログラムの起動", ExecutionPermission.Process)),
+            evilOutcome.suspicious,
+        )
         assertEquals("hash:Evil.java", evilOutcome.sourceHash)
         val brokenOutcome = outcome.compiled.single { it.source == broken }.outcome as CompileOutcome.Success
         assertEquals(listOf("検査できませんでした"), brokenOutcome.suspicious.map { it.category })
@@ -461,6 +465,10 @@ class GradingPipelineTest {
         )
         val calls = runBlocking { pipeline.testSource(callsConfig, compiled, listOf(TaskName("課題2")), JavaToolchain(), 1) }
         assertEquals(listOf(false), calls.map { it.held })
+        // 課題で種類ごと許可すれば、確認なしで実行する
+        val processConfig = ConfigParser.parse(allowYaml.replace("    allowCalls: [new FileWriter]", "    allow: [process]"))
+        val allowed = runBlocking { pipeline.testSource(processConfig, compiled, listOf(TaskName("課題2")), JavaToolchain(), 1) }
+        assertEquals(listOf(Judge.AC to false), allowed.map { it.autoJudge to it.held })
     }
 
     @Test

@@ -41,6 +41,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Badge
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -65,9 +66,14 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.key.Key
@@ -89,6 +95,7 @@ import com.n0n5ense.taassistant.core.config.Config
 import com.n0n5ense.taassistant.core.config.ConfigDraft
 import com.n0n5ense.taassistant.core.config.DraftField
 import com.n0n5ense.taassistant.core.config.DraftIssue
+import com.n0n5ense.taassistant.core.config.ExecutionPermission
 import com.n0n5ense.taassistant.core.config.TaskDraft
 import com.n0n5ense.taassistant.core.config.TestCaseDraft
 import com.n0n5ense.taassistant.core.config.TestMethod
@@ -784,17 +791,6 @@ private fun TaskEditor(
                 manual = task.manual,
                 onChange = { v -> viewModel.updateTask(task.key) { it.copy(manual = v) } },
             )
-            EditorField(
-                label = "確認なしで実行してよい呼び出し (任意)",
-                value = task.allowCalls,
-                onValueChange = { v -> viewModel.updateTask(task.key) { it.copy(allowCalls = v) } },
-                hint = "外部プログラムの起動・ファイルの書き込み・ネットワーク・リフレクションなどを呼ぶ提出は、確認するまで実行しません。" +
-                    "この課題で使うものを1行に1つ書くと、確認なしで実行します (例: new FileWriter / Files.write / Files.*)",
-                placeholder = "new FileWriter",
-                monospaced = true,
-                minLines = 2,
-                modifier = Modifier.fillMaxWidth(),
-            )
             task.testCases.forEachIndexed { caseIndex, testCase ->
                 val nameError = issue(DraftField.TestCaseName, testCase.key)
                 val expectError = issue(DraftField.Expect, testCase.key)
@@ -836,6 +832,89 @@ private fun TaskEditor(
                 Text("テストケースを追加")
             }
         }
+
+        TaskAdvancedSettings(
+            task = task,
+            onChange = { transform -> viewModel.updateTask(task.key, transform) },
+        )
+    }
+}
+
+/**
+ * 課題の詳細設定 (開閉できる)。実行する前の検査で、確認なしで実行してよいものを選ぶ。
+ * 何か設定していれば最初から開いておく
+ */
+@Composable
+private fun TaskAdvancedSettings(task: TaskDraft, onChange: ((TaskDraft) -> TaskDraft) -> Unit) {
+    val configured = task.allow.isNotEmpty() || task.allowCalls.isNotBlank()
+    var expanded by rememberSaveable(task.key) { mutableStateOf(configured) }
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Row(
+            Modifier.fillMaxWidth().clip(MaterialTheme.shapes.small).clickable { expanded = !expanded }
+                .padding(vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Icon(
+                if (expanded) Icons.Filled.KeyboardArrowUp else Icons.Filled.KeyboardArrowDown,
+                contentDescription = if (expanded) "詳細設定を閉じる" else "詳細設定を開く",
+            )
+            Column(Modifier.weight(1f)) {
+                Text("詳細設定", style = MaterialTheme.typography.titleMedium)
+                Text(
+                    if (configured) {
+                        "実行を許可: " + (task.allow.sortedBy { it.ordinal }.map { it.label } +
+                            listOfNotNull(task.allowCalls.takeIf { it.isNotBlank() }?.let { "個別の呼び出し" }))
+                            .joinToString("・")
+                    } else {
+                        "実行する前の検査 (危ない可能性がある呼び出しを、確認するまで実行しない)"
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+        if (!expanded) return@Column
+        Text(
+            "次のものを呼ぶ提出は、TA が確認するまで実行しません。この課題で使うものを選ぶと、確認なしで実行します。",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Text("実行を許可するもの", style = MaterialTheme.typography.labelLarge)
+        Column {
+            ExecutionPermission.entries.forEach { permission ->
+                val checked = permission in task.allow
+                Row(
+                    Modifier.fillMaxWidth().clip(MaterialTheme.shapes.small)
+                        .toggleable(value = checked, role = Role.Checkbox) { on ->
+                            onChange { t -> t.copy(allow = if (on) t.allow + permission else t.allow - permission) }
+                        }
+                        .padding(vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    // 行全体で切り替えるので、チェックボックス自体はクリックを受けない
+                    Checkbox(checked = checked, onCheckedChange = null, modifier = Modifier.padding(horizontal = 12.dp))
+                    Column {
+                        Text(permission.label, style = MaterialTheme.typography.bodyMedium)
+                        Text(
+                            permission.description,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+            }
+        }
+        EditorField(
+            label = "個別に許可する呼び出し (任意)",
+            value = task.allowCalls,
+            onValueChange = { v -> onChange { it.copy(allowCalls = v) } },
+            hint = "種類ごとではなく、呼び出し単位で許可するとき。1行に1つ (例: new FileWriter / Files.write / Files.*)",
+            placeholder = "new FileWriter",
+            monospaced = true,
+            minLines = 2,
+            modifier = Modifier.fillMaxWidth(),
+        )
     }
 }
 
