@@ -112,7 +112,17 @@ data class DetailRow(
                     if (tc.calls.isNotEmpty()) tc.calls.joinToString("\n") { "calls: $it" } else tc.expect.joinToString("\n")
                 }.orEmpty(),
                 stdout = execution?.stdout.orEmpty().normalizeNewlines().trimEnd(),
-                stderr = listOf(execution?.stderr.orEmpty(), result.note)
+                stderr = listOf(
+                    execution?.stderr.orEmpty(),
+                    result.note,
+                    // 危ない可能性がある呼び出しがあるため、実行を保留した
+                    if (result.held) {
+                        "HELD: " + (compile as? CompileOutcome.Success)?.suspicious.orEmpty()
+                            .joinToString(", ") { "${it.call} (${it.location})" }
+                    } else {
+                        ""
+                    },
+                )
                     .filter(String::isNotBlank)
                     .joinToString("\n")
                     .normalizeNewlines()

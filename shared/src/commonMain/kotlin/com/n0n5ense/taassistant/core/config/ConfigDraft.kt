@@ -26,6 +26,8 @@ data class TaskDraft(
     val testCases: List<TestCaseDraft> = emptyList(),
     /** true: 採点時に実行せず、1件ずつ実行して手動で判定する (GUI の課題など) */
     val manual: Boolean = false,
+    /** 確認なしで実行してよい呼び出し (1行 = 1つ) */
+    val allowCalls: String = "",
 )
 
 data class TestCaseDraft(
@@ -86,6 +88,7 @@ fun Config.toDraft(newKey: () -> Long): ConfigDraft = ConfigDraft(
             words = task.word.joinToString("\n"),
             excludeWords = task.excludeWord.joinToString("\n"),
             manual = task.manual,
+            allowCalls = task.allowCalls.joinToString("\n"),
             testCases = task.testcase.map { tc ->
                 TestCaseDraft(
                     key = newKey(),
@@ -118,6 +121,7 @@ fun ConfigDraft.toConfig(): Config = Config(
             word = task.words.nonBlankLines(),
             excludeWord = task.excludeWords.nonBlankLines(),
             manual = task.manual,
+            allowCalls = task.allowCalls.nonBlankLines().map { it.trim() },
             testcase = task.testCases.map { tc ->
                 TestCase(
                     name = tc.name.trim(),

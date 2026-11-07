@@ -43,6 +43,11 @@ data class GradingRequest(
      * 空のリストは「どの課題でもない」(紐づけをすべて外した) を表す
      */
     val assignments: Map<String, List<TaskName>> = emptyMap(),
+    /**
+     * 危ない可能性がある呼び出しを確認して、実行を許可したソース (キーは [SourceFile.displayPath]、値はソースのハッシュ)。
+     * ハッシュが今のソースと同じときだけ有効
+     */
+    val approvals: Map<String, String> = emptyMap(),
 )
 
 /** 採点の結果。[lastStep] より後の段階の結果は空 */

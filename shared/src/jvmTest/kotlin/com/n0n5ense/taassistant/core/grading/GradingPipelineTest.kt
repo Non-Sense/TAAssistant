@@ -12,6 +12,7 @@ import com.n0n5ense.taassistant.core.model.SourceEncoding
 import com.n0n5ense.taassistant.core.model.SourceFile
 import com.n0n5ense.taassistant.core.model.Student
 import com.n0n5ense.taassistant.core.model.StudentId
+import com.n0n5ense.taassistant.core.model.SuspiciousCall
 import com.n0n5ense.taassistant.core.report.Report
 import com.n0n5ense.taassistant.core.report.ReportFormat
 import kotlinx.coroutines.delay
@@ -71,6 +72,10 @@ class GradingPipelineTest {
         val run: (className: String, testCase: TestCase) -> Execution = { _, _ -> exec("ok1") },
         val toolchainError: String? = null,
         val unreadable: Set<String> = emptySet(),
+        /** ソースのパスごとの、コンパイルしたクラスの中の呼び出し (実行する前の検査に使う) */
+        val classCalls: Map<String, List<CallSite>> = emptyMap(),
+        /** 検査に失敗するソースのパス */
+        val uninspectable: Set<String> = emptySet(),
     ) : GradingToolkit {
         val calls: MutableList<String> = Collections.synchronizedList(mutableListOf())
 
@@ -117,6 +122,17 @@ class GradingPipelineTest {
             return compileOutcomes[source.path] ?: success(source.fileName)
         }
 
+        override suspend fun listCalls(
+            source: SourceFile,
+            target: CompileOutcome.Success,
+            toolchain: JavaToolchain,
+        ): List<CallSite> {
+            if (source.path in uninspectable) throw IllegalStateException("javap でクラスを調べられませんでした")
+            return classCalls[source.path].orEmpty()
+        }
+
+        override suspend fun sourceHash(source: SourceFile): String = "hash:" + source.fileName
+
         override suspend fun readSource(source: SourceFile, encoding: SourceEncoding): String {
             if (source.path in unreadable) throw IllegalStateException("読めません")
             return sources.values.flatten().first { it.first == source }.second
@@ -157,6 +173,7 @@ class GradingPipelineTest {
         lastStep: LastStep = LastStep.Test,
         assignments: Map<String, List<TaskName>> = emptyMap(),
         parallelism: Int = 4,
+        approvals: Map<String, String> = emptyMap(),
     ) = GradingRequest(
         rootDir = "/root",
         configPath = "/root/config.yaml",
@@ -166,6 +183,7 @@ class GradingPipelineTest {
         cleanWorkspace = false,
         toolchain = JavaToolchain("/jdk/bin"),
         assignments = assignments,
+        approvals = approvals,
     )
 
     private fun run(toolkit: FakeToolkit, request: GradingRequest): Pair<GradingOutcome, Recorder> {
@@ -353,6 +371,96 @@ class GradingPipelineTest {
             PipelineEvent.Log("テスト完了: AC 1  WA 1  RE 1  CE 2  IE 2  NF 2  ?? 1"),
             recorder.logs.last(),
         )
+    }
+
+    @Test
+    fun holdsSuspiciousSourcesUntilApproved() {
+        val exec = CallSite("Evil.main", "java.lang.Runtime", "exec", "(Ljava/lang/String;)Ljava/lang/Process;")
+        val write = CallSite("Writer.main", "java.io.FileWriter", "<init>", "(Ljava/lang/String;)V")
+        val evil = source("s1", "Evil.java")
+        val writer = source("s1", "Writer.java")
+        val broken = source("s1", "Broken.java")
+        val approved = source("s1", "Approved.java")
+        val changed = source("s1", "Changed.java")
+        val allowYaml = yaml.replace("    word: [課題2]", "    word: [課題2]" + nl + "    allowCalls: [new FileWriter]")
+        val fake = FakeToolkit(
+            listOf(student("s1")),
+            mapOf(
+                StudentId("s1") to listOf(
+                    evil to "課題2 課題3",
+                    writer to "課題2", // 課題2 では FileWriter を許可している
+                    broken to "課題2", // 検査に失敗した
+                    approved to "課題2",
+                    changed to "課題2",
+                ),
+            ),
+            classCalls = mapOf(
+                evil.path to listOf(exec),
+                writer.path to listOf(write),
+                approved.path to listOf(exec),
+                changed.path to listOf(exec),
+            ),
+            uninspectable = setOf(broken.path),
+            run = { _, _ -> exec("ok") },
+        )
+        val toolkit = object : GradingToolkit by fake {
+            override suspend fun readTextFile(path: String): String = allowYaml
+        }
+        val recorder = Recorder()
+        val outcome = runBlocking {
+            GradingPipeline(toolkit).run(
+                request(
+                    approvals = mapOf(
+                        approved.displayPath to "hash:Approved.java",
+                        // 確認した後にソースが変わった (ハッシュが違う)
+                        changed.displayPath to "hash:old",
+                    ),
+                ),
+            ) { recorder.events += it }
+        }
+
+        data class Row(val file: String, val task: String?, val case: String?, val judge: Judge, val held: Boolean)
+        assertEquals(
+            listOf(
+                Row("Evil.java", "課題2", "s", Judge.Unknown, true),
+                // テストケースのない課題は、もともと実行しない
+                Row("Evil.java", "課題3", null, Judge.Unknown, false),
+                Row("Writer.java", "課題2", "s", Judge.AC, false),
+                Row("Broken.java", "課題2", "s", Judge.Unknown, true),
+                Row("Approved.java", "課題2", "s", Judge.AC, false),
+                Row("Changed.java", "課題2", "s", Judge.Unknown, true),
+            ),
+            outcome.results.map { Row(it.source.fileName, it.taskName?.name, it.testCase?.name, it.autoJudge, it.held) },
+        )
+        // 保留したソースは実行していない
+        assertEquals(
+            listOf("execute Writer s 2222", "execute Approved s 2222"),
+            fake.calls.filter { it.startsWith("execute") }.sorted().reversed(),
+        )
+        // コンパイル結果に、見つかった呼び出しとソースのハッシュを記録する
+        val evilOutcome = outcome.compiled.single { it.source == evil }.outcome as CompileOutcome.Success
+        assertEquals(listOf(SuspiciousCall("java.lang.Runtime.exec", "Evil.main", "外部プログラムの起動")), evilOutcome.suspicious)
+        assertEquals("hash:Evil.java", evilOutcome.sourceHash)
+        val brokenOutcome = outcome.compiled.single { it.source == broken }.outcome as CompileOutcome.Success
+        assertEquals(listOf("検査できませんでした"), brokenOutcome.suspicious.map { it.category })
+        assertTrue(
+            recorder.logs.any { it.level == LogLevel.Warning && it.message.startsWith("危ない可能性がある呼び出しのあるソースが 5 件") },
+            recorder.logs.toString(),
+        )
+
+        // testSource: 確認済みなら実行する。メソッド呼び出しの確認は保留しない
+        val config = ConfigParser.parse(allowYaml)
+        val compiled = outcome.compiled.single { it.source == evil }
+        val pipeline = GradingPipeline(toolkit)
+        val held = runBlocking { pipeline.testSource(config, compiled, listOf(TaskName("課題2")), JavaToolchain(), 1) }
+        assertEquals(listOf(true), held.map { it.held })
+        val run = runBlocking { pipeline.testSource(config, compiled, listOf(TaskName("課題2")), JavaToolchain(), 1, approved = true) }
+        assertEquals(listOf(Judge.AC to false), run.map { it.autoJudge to it.held })
+        val callsConfig = ConfigParser.parse(
+            allowYaml.replace("        expect: [\"^ok$\"]" + nl + "  課題3:", "        calls: [println]" + nl + "  課題3:"),
+        )
+        val calls = runBlocking { pipeline.testSource(callsConfig, compiled, listOf(TaskName("課題2")), JavaToolchain(), 1) }
+        assertEquals(listOf(false), calls.map { it.held })
     }
 
     @Test

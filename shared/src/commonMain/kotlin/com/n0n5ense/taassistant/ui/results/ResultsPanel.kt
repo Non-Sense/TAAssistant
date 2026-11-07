@@ -26,6 +26,7 @@ import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -74,6 +75,7 @@ import com.n0n5ense.taassistant.core.grading.GradingOutcome
 import com.n0n5ense.taassistant.core.model.CompileOutcome
 import com.n0n5ense.taassistant.core.model.Judge
 import com.n0n5ense.taassistant.core.model.StudentId
+import com.n0n5ense.taassistant.core.model.SuspiciousCall
 import com.n0n5ense.taassistant.core.model.TestResult
 import com.n0n5ense.taassistant.core.report.formatMillis
 import com.n0n5ense.taassistant.ui.common.AppVerticalScrollbar
@@ -309,6 +311,8 @@ internal fun ResultBrowser(
                 tasks = outcome.config.tasks.keys.toList(),
                 assigning = state.assigningSource == selected.source.displayPath,
                 canAssign = !state.isRunning && state.assigningSource == null,
+                approved = viewModel.isApproved(selected.source, selected.compile),
+                onApprove = { viewModel.approveSource(selected.id) },
                 manualTask = viewModel.isManualTask(selected),
                 manualRunId = state.manualRunId,
                 canRun = !state.isRunning,
@@ -699,6 +703,8 @@ private fun ResultDetail(
     tasks: List<TaskName>,
     assigning: Boolean,
     canAssign: Boolean,
+    approved: Boolean,
+    onApprove: () -> Unit,
     manualTask: Boolean,
     manualRunId: Int?,
     canRun: Boolean,
@@ -772,8 +778,21 @@ private fun ResultDetail(
                 onRestore = { viewModel.restoreAutoTasks(result.id) },
             )
 
+            // ---- 実行する前の検査: 危ない可能性がある呼び出し
+            val suspicious = (result.compile as? CompileOutcome.Success)?.suspicious.orEmpty()
+            if (result.held || (suspicious.isNotEmpty() && approved)) {
+                SafetyCard(
+                    result = result,
+                    suspicious = suspicious,
+                    approved = approved,
+                    running = assigning,
+                    enabled = canAssign,
+                    onApprove = onApprove,
+                )
+            }
+
             // ---- 手動で判定する課題: 1件ずつ実行する
-            if (manualTask) {
+            if (manualTask && !result.held) {
                 ManualRunCard(
                     result = result,
                     running = manualRunId == result.id,
@@ -918,6 +937,77 @@ private fun ResultDetail(
             TextBlock(result.source.fileName, source ?: "読み込み中…")
         }
         AppVerticalScrollbar(scroll, Modifier.align(Alignment.CenterEnd).fillMaxHeight())
+    }
+}
+
+/**
+ * 実行する前の検査の結果。危ない可能性がある呼び出しの一覧を表示し、保留中なら「ソースを確認して実行」できる。
+ * 確認済みのソースは、確認済みであることだけ表示する
+ */
+@Composable
+private fun SafetyCard(
+    result: TestResult,
+    suspicious: List<SuspiciousCall>,
+    approved: Boolean,
+    running: Boolean,
+    enabled: Boolean,
+    onApprove: () -> Unit,
+) {
+    val colors = MaterialTheme.colorScheme
+    val held = result.held
+    Surface(
+        shape = MaterialTheme.shapes.medium,
+        color = if (held) colors.errorContainer else colors.surfaceContainerHigh,
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        val content = if (held) colors.onErrorContainer else colors.onSurfaceVariant
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Icon(Icons.Filled.Warning, contentDescription = null, tint = content, modifier = Modifier.size(20.dp))
+                Text(
+                    if (held) "実行を保留しています" else "確認済み (実行を許可しました)",
+                    style = MaterialTheme.typography.titleSmall,
+                    color = content,
+                )
+            }
+            Text(
+                if (held) {
+                    "危ない可能性がある呼び出しがあるため、テストを実行していません。" +
+                        "下のソースを確認し、問題がなければ「ソースを確認して実行」を押してください。"
+                } else {
+                    "危ない可能性がある呼び出しがありますが、確認して実行を許可しました。ソースが変わると確認し直します。"
+                },
+                style = MaterialTheme.typography.bodySmall,
+                color = content,
+            )
+            SelectionContainer {
+                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    suspicious.forEach { s ->
+                        Text(
+                            "${s.category}: ${s.call}  (${s.location})",
+                            style = MaterialTheme.typography.bodySmall,
+                            fontFamily = FontFamily.Monospace,
+                            color = content,
+                        )
+                    }
+                }
+            }
+            if (held) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Button(onClick = onApprove, enabled = enabled && !running) { Text("ソースを確認して実行") }
+                    if (running) {
+                        CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                        Text("実行しています…", style = MaterialTheme.typography.bodySmall, color = content)
+                    } else {
+                        Text(
+                            "課題で使ってよい呼び出しなら、コンフィグの「確認なしで実行してよい呼び出し」に書くと、次から保留しません",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = content,
+                        )
+                    }
+                }
+            }
+        }
     }
 }
 

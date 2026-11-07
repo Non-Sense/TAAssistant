@@ -3,6 +3,7 @@ package com.n0n5ense.taassistant.core.grading
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runInterruptible
 import java.io.ByteArrayOutputStream
+import java.io.File
 import java.io.InputStream
 import java.nio.ByteBuffer
 import java.nio.charset.Charset
@@ -26,14 +27,17 @@ private const val MAX_CAPTURE_BYTES = 4 * 1024 * 1024
  * - stdin は書き込んだ後に閉じる (EOF まで読むプログラムが止まらないように)
  * - timeoutMillis < 0 なら無制限
  * - コルーチンがキャンセルされたらプロセスを強制終了する
+ * - 強制終了するときは、プロセスが起動した子プロセスもまとめて終了する
+ * @param workingDir 作業ディレクトリ (null ならこのアプリと同じ)
  */
 internal suspend fun runProcess(
     command: List<String>,
     stdin: ByteArray?,
-    timeoutMillis: Long
+    timeoutMillis: Long,
+    workingDir: File? = null,
 ): ProcessOutput =
     runInterruptible(Dispatchers.IO) {
-        val process = ProcessBuilder(command).start()
+        val process = ProcessBuilder(command).apply { workingDir?.let(::directory) }.start()
         val startedAt = System.nanoTime()
         try {
             val stdout = StreamCollector(process.inputStream)
@@ -49,7 +53,7 @@ internal suspend fun runProcess(
             }
             val elapsed = System.nanoTime() - startedAt
             if (!finished) {
-                process.destroyForcibly()
+                destroyTree(process)
                 process.waitFor(5, TimeUnit.SECONDS)
             }
             ProcessOutput(
@@ -60,9 +64,15 @@ internal suspend fun runProcess(
                 elapsedNanos = elapsed,
             )
         } finally {
-            if (process.isAlive) process.destroyForcibly()
+            if (process.isAlive) destroyTree(process)
         }
     }
+
+/** プロセスと、その子孫のプロセスを強制終了する (子から先に終了する) */
+private fun destroyTree(process: Process) {
+    runCatching { process.descendants().forEach { it.destroyForcibly() } }
+    process.destroyForcibly()
+}
 
 private class StreamCollector(stream: InputStream) {
     private val buffer = ByteArrayOutputStream()

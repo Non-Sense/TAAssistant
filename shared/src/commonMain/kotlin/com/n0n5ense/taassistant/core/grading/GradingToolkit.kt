@@ -86,6 +86,15 @@ interface GradingToolkit {
 
     suspend fun readSource(source: SourceFile, encoding: SourceEncoding): String
 
+    /**
+     * コンパイルした [source] から作られたクラス (入れ子のクラスを含む) の、すべてのメソッドの呼び出しを調べる。
+     * 実行する前の検査に使う。調べられなければ例外を投げる (呼び出し側は「確認が必要」として扱う)
+     */
+    suspend fun listCalls(source: SourceFile, target: CompileOutcome.Success, toolchain: JavaToolchain): List<CallSite>
+
+    /** ソースの内容のハッシュ (確認済みのソースが変わっていないかを判断する) */
+    suspend fun sourceHash(source: SourceFile): String
+
     suspend fun execute(
         target: CompileOutcome.Success,
         testCase: TestCase,

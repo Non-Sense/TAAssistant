@@ -78,6 +78,11 @@ data class Task(
      * 結果は未判定 (??) になり、[TestCase.check] を見ながら判定する
      */
     val manual: Boolean = false,
+    /**
+     * 確認なしで実行してよい呼び出し (ファイルに書く課題など)。
+     * 危ない可能性がある呼び出し ([com.n0n5ense.taassistant.core.grading.SafetyCheck]) のうち、これに当たるものは止めない
+     */
+    val allowCalls: List<String> = emptyList(),
 )
 
 @Serializable

@@ -30,6 +30,15 @@ data class ProjectSettings(
     val jdkBinDir: String = "",
 )
 
+/** 危ない可能性がある呼び出しを確認して、実行を許可したソース */
+@Serializable
+data class SourceApproval(
+    /** ソースの [SourceFile.displayPath] */
+    val source: String,
+    /** 確認したときのソースのハッシュ (内容が変わったら確認し直す) */
+    val hash: String,
+)
+
 /** ソースに手動で割り当てた課題 */
 @Serializable
 data class TaskAssignment(
@@ -48,6 +57,8 @@ data class ProjectFile(
     val version: Int = ProjectCodec.CURRENT_VERSION,
     val settings: ProjectSettings = ProjectSettings(),
     val assignments: List<TaskAssignment> = emptyList(),
+    /** 危ない可能性がある呼び出しを確認して、実行を許可したソース */
+    val approvals: List<SourceApproval> = emptyList(),
     /** 最後に採点した結果。結果の手動判定もここに含まれる */
     val outcome: GradingOutcome? = null,
 )

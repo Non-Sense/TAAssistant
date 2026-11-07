@@ -11,6 +11,8 @@ enum class ResultFilter(val label: String, val accepts: (TestResult) -> Boolean)
     NeedsReview("要確認", { it.judge in Judge.needsReview }),
     Executed("実行したもの", { it.execution != null }),
     Manual("手動判定・割り当て", { it.manualJudge != null || it.assigned }),
+    /** 危ない可能性がある呼び出しがあるため、実行を保留している */
+    Held("実行を保留", { it.held }),
     NotRun(
         "NF / CE / TCE / IE",
         { it.judge == Judge.NF || it.judge == Judge.CE || it.judge == Judge.TCE || it.judge == Judge.IE }),

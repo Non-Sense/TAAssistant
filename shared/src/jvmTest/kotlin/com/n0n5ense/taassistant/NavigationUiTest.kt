@@ -357,7 +357,8 @@ class NavigationUiTest {
             "学生のページの中では「学生のページ」ボタンを出さない"
         )
 
-        // 課題を特定できないソースに、課題を割り当てる (その場でテストを実行する)
+        // 課題を特定できないソースに、課題を割り当てる。
+        // (このテストのコンパイル結果にはクラスファイルが無く、実行する前の検査ができないので、実行せずに保留になる)
         onNode(hasText("課題を特定できません")).performClick()
         waitUntil(timeoutMillis = 10_000) { exists(hasText("課題を割り当て")) }
         onNode(hasText("課題を割り当て")).performClick()
@@ -367,6 +368,7 @@ class NavigationUiTest {
         val restore = hasText("課題の判定を自動に戻す")
         waitUntil(timeoutMillis = 30_000) { exists(restore) && exists(hasText("課題「課題1」は手動で決めました")) }
         assertTrue(exists(hasText("(割り当て)")))
+        assertTrue(exists(hasText("実行を保留しています")), "検査できなかったソースは確認なしに実行しない")
         assertFalse(exists(hasText("課題を特定できません")))
         // 「この課題から外す」: 課題が残らないので、どの課題でもない NF になる
         onNode(hasText("この課題から外す")).performClick()

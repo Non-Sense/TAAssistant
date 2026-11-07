@@ -11,15 +11,19 @@ import com.n0n5ense.taassistant.core.grading.JavaToolchain
 import com.n0n5ense.taassistant.core.grading.LastStep
 import com.n0n5ense.taassistant.core.grading.LogLevel
 import com.n0n5ense.taassistant.core.grading.PipelineEvent
+import com.n0n5ense.taassistant.core.grading.SafetyCheck
 import com.n0n5ense.taassistant.core.grading.Stage
 import com.n0n5ense.taassistant.core.model.CompileOutcome
+import com.n0n5ense.taassistant.core.model.CompiledSource
 import com.n0n5ense.taassistant.core.model.Judge
 import com.n0n5ense.taassistant.core.model.SourceEncoding
+import com.n0n5ense.taassistant.core.model.SourceFile
 import com.n0n5ense.taassistant.core.model.TestResult
 import com.n0n5ense.taassistant.core.model.encoding
 import com.n0n5ense.taassistant.core.project.ProjectCodec
 import com.n0n5ense.taassistant.core.project.ProjectFile
 import com.n0n5ense.taassistant.core.project.ProjectSettings
+import com.n0n5ense.taassistant.core.project.SourceApproval
 import com.n0n5ense.taassistant.core.project.TaskAssignment
 import com.n0n5ense.taassistant.core.project.carryOverManualJudges
 import com.n0n5ense.taassistant.core.project.replaceSourceResults
@@ -29,6 +33,7 @@ import com.n0n5ense.taassistant.core.report.ReportFormat
 import com.n0n5ense.taassistant.core.report.buildReport
 import com.n0n5ense.taassistant.platform.PlatformServices
 import com.n0n5ense.taassistant.ui.results.ResultViewState
+import kotlin.time.Duration.Companion.milliseconds
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.FlowPreview
@@ -44,7 +49,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
-import kotlin.time.Duration.Companion.milliseconds
 
 /** 画面で編集する採点の設定。プロジェクトファイルに保存する */
 typealias SetupState = ProjectSettings
@@ -98,6 +102,8 @@ data class UiState(
     val results: List<TestResult> = emptyList(),
     /** 手動で割り当てた課題 (キーはソースの displayPath) */
     val assignments: Map<String, List<TaskName>> = emptyMap(),
+    /** 危ない可能性がある呼び出しを確認して、実行を許可したソース (キーは displayPath、値はソースのハッシュ) */
+    val approvals: Map<String, String> = emptyMap(),
     /** 課題を割り当ててテストを実行中のソース (displayPath) */
     val assigningSource: String? = null,
     /** 手動で判定する課題で、1件ずつ実行中の結果の id */
@@ -122,13 +128,14 @@ private data class SaveSnapshot(
     val path: String,
     val settings: ProjectSettings,
     val assignments: Map<String, List<TaskName>>,
+    val approvals: Map<String, String>,
     val outcome: GradingOutcome?,
     val results: List<TestResult>,
 )
 
 private fun UiState.saveSnapshot(): SaveSnapshot? =
     project?.takeUnless { isRunning || loadingProject }
-        ?.let { SaveSnapshot(it.path, setup, assignments, outcome, results) }
+        ?.let { SaveSnapshot(it.path, setup, assignments, approvals, outcome, results) }
 
 @OptIn(FlowPreview::class)
 class AppViewModel(
@@ -323,6 +330,7 @@ class AppViewModel(
                 outcome = outcome,
                 results = results,
                 assignments = file.assignments.associate { it.source to it.tasks },
+                approvals = file.approvals.associate { it.source to it.hash },
                 selectedId = results.firstOrNull()?.id,
                 resultView = ResultViewState(collapsed = outcome?.students.orEmpty().map { it.id }
                     .toSet()),
@@ -373,6 +381,11 @@ class AppViewModel(
                             tasks
                         )
                     } else emptyList(),
+                    approvals = if (includeResults) {
+                        snapshot.approvals.map { (source, hash) -> SourceApproval(source, hash) }
+                    } else {
+                        emptyList()
+                    },
                     outcome = if (includeResults) snapshot.outcome?.copy(results = snapshot.results) else null,
                 ),
             )
@@ -478,6 +491,7 @@ class AppViewModel(
             cleanWorkspace = setup.cleanWorkspace,
             toolchain = JavaToolchain(setup.jdkBinDir.trim()),
             assignments = before.assignments,
+            approvals = before.approvals,
         )
         _state.update {
             it.copy(
@@ -599,14 +613,29 @@ class AppViewModel(
         val s = state.value
         if (s.isRunning || s.manualRunId != null) return
         val result = s.results.firstOrNull { it.id == resultId } ?: return
-        if (!isManualTask(result)) return
-        val target = result.compile as? CompileOutcome.Success ?: return
+        if (!isManualTask(result) || result.held) return
+        val compiled = result.compile as? CompileOutcome.Success ?: return
         val testCase = result.testCase ?: TestCase(name = "")
+        val toolchain = JavaToolchain(s.setup.jdkBinDir.trim())
         _state.update { it.copy(manualRunId = resultId) }
-        appendLog("${result.source.displayPath} を実行しています (${result.taskName}: ${testCase.name.ifEmpty { "-" }})", LogLevel.Info)
         manualRunJob = viewModelScope.launch {
             try {
-                val execution = services.toolkit.execute(target, testCase, JavaToolchain(s.setup.jdkBinDir.trim()), -1)
+                // 実行する前の検査をしていない結果 (この機能より前に採点した結果) は、先に検査する
+                val target = if (compiled.sourceHash.isEmpty()) {
+                    pipeline.inspect(result.source, compiled, toolchain) as CompileOutcome.Success
+                } else {
+                    compiled
+                }
+                val allow = result.taskName?.let { s.outcome?.config?.tasks?.get(it)?.allowCalls }.orEmpty()
+                if (!isApproved(result.source, target) && SafetyCheck.blocking(target.suspicious, allow).isNotEmpty()) {
+                    appendLog("${result.source.displayPath} には危ない可能性がある呼び出しがあるため、実行を保留しました", LogLevel.Warning)
+                    _state.update { st ->
+                        st.copy(results = st.results.map { if (it.id == resultId) it.copy(compile = target, held = true) else it })
+                    }
+                    return@launch
+                }
+                appendLog("${result.source.displayPath} を実行しています (${result.taskName}: ${testCase.name.ifEmpty { "-" }})", LogLevel.Info)
+                val execution = services.toolkit.execute(target, testCase, toolchain, -1)
                 _state.update { st ->
                     st.copy(results = st.results.map { if (it.id == resultId) it.copy(execution = execution) else it })
                 }
@@ -618,6 +647,73 @@ class AppViewModel(
                 appendLog("${result.source.displayPath} を実行できませんでした: ${e.message}", LogLevel.Error)
             } finally {
                 _state.update { if (it.manualRunId == resultId) it.copy(manualRunId = null) else it }
+            }
+        }
+    }
+
+    /** 危ない可能性がある呼び出しを確認して、実行を許可したソースか (確認した後にソースが変わっていれば許可しない) */
+    fun isApproved(source: SourceFile, outcome: CompileOutcome): Boolean {
+        val hash = (outcome as? CompileOutcome.Success)?.sourceHash.orEmpty()
+        return hash.isNotEmpty() && state.value.approvals[source.displayPath] == hash
+    }
+
+    /** 実行する前の検査をしていない (この機能より前に採点した) コンパイル結果を検査する */
+    private suspend fun inspected(compiled: CompiledSource, toolchain: JavaToolchain): CompiledSource {
+        val outcome = compiled.outcome as? CompileOutcome.Success ?: return compiled
+        if (outcome.sourceHash.isNotEmpty()) return compiled
+        return compiled.copy(outcome = pipeline.inspect(compiled.source, outcome, toolchain))
+    }
+
+    /**
+     * 危ない可能性がある呼び出しのあるソースを、TA が確認したものとして実行を許可し、そのソースのテストを実行する。
+     * 許可はソースのハッシュと一緒にプロジェクトに保存し、ソースが変わったら確認し直す。
+     * 同じ課題・テストケースの手動判定は引き継ぐ
+     */
+    fun approveSource(resultId: Int) {
+        val s = state.value
+        if (s.isRunning || s.assigningSource != null) return
+        val outcome = s.outcome ?: return
+        val target = s.results.firstOrNull { it.id == resultId && it.held } ?: return
+        val source = target.source
+        val compiled = outcome.compiled.firstOrNull { it.source.path == source.path } ?: run {
+            appendLog("${source.displayPath}: コンパイル結果が見つからないため実行できません", LogLevel.Error)
+            return
+        }
+        _state.update { it.copy(assigningSource = source.displayPath) }
+        viewModelScope.launch {
+            try {
+                val toolchain = JavaToolchain(s.setup.jdkBinDir.trim())
+                val inspected = inspected(compiled, toolchain)
+                val hash = (inspected.outcome as? CompileOutcome.Success)?.sourceHash.orEmpty()
+                check(hash.isNotEmpty()) { "ソースを読めませんでした" }
+                val tested = withContext(Dispatchers.Default) {
+                    pipeline.testSource(
+                        config = outcome.config,
+                        compiled = inspected,
+                        tasks = s.assignments[source.displayPath],
+                        toolchain = toolchain,
+                        parallelism = if (s.setup.parallelTests) parallelism() else 1,
+                        approved = true,
+                    )
+                }.map { it.copy(assigned = source.displayPath in s.assignments) }
+                _state.update { st ->
+                    val previous = st.results.filter { it.source == source }
+                    val (carried, _) = carryOverManualJudges(previous, tested)
+                    val results = st.results.replaceSourceResults(source, carried)
+                    st.copy(
+                        results = results,
+                        approvals = st.approvals + (source.displayPath to hash),
+                        assigningSource = null,
+                        selectedId = results.firstOrNull { it.source == source && it.taskName == target.taskName }?.id
+                            ?: st.selectedId,
+                    )
+                }
+                appendLog("${source.displayPath} を確認済みにして実行しました", LogLevel.Info)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                appendLog("${source.displayPath}: 実行できませんでした: ${e.message}", LogLevel.Error)
+                _state.update { it.copy(assigningSource = null) }
             }
         }
     }
@@ -648,12 +744,15 @@ class AppViewModel(
         viewModelScope.launch {
             try {
                 val tested = withContext(Dispatchers.Default) {
+                    val toolchain = JavaToolchain(s.setup.jdkBinDir.trim())
+                    val inspected = inspected(compiled, toolchain)
                     pipeline.testSource(
                         config = outcome.config,
-                        compiled = compiled,
+                        compiled = inspected,
                         tasks = listOf(task),
-                        toolchain = JavaToolchain(s.setup.jdkBinDir.trim()),
+                        toolchain = toolchain,
                         parallelism = if (s.setup.parallelTests) parallelism() else 1,
+                        approved = isApproved(inspected.source, inspected.outcome),
                     )
                 }
                 _state.update { st ->
@@ -724,12 +823,15 @@ class AppViewModel(
         viewModelScope.launch {
             try {
                 val tested = withContext(Dispatchers.Default) {
+                    val toolchain = JavaToolchain(s.setup.jdkBinDir.trim())
+                    val inspected = inspected(compiled, toolchain)
                     pipeline.testSource(
                         config = outcome.config,
-                        compiled = compiled,
+                        compiled = inspected,
                         tasks = null,
-                        toolchain = JavaToolchain(s.setup.jdkBinDir.trim()),
+                        toolchain = toolchain,
                         parallelism = if (s.setup.parallelTests) parallelism() else 1,
+                        approved = isApproved(inspected.source, inspected.outcome),
                     )
                 }
                 _state.update { st ->

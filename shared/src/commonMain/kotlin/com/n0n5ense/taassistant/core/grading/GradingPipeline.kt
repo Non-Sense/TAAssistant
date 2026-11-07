@@ -9,7 +9,9 @@ import com.n0n5ense.taassistant.core.model.CompileOutcome
 import com.n0n5ense.taassistant.core.model.CompiledSource
 import com.n0n5ense.taassistant.core.model.Judge
 import com.n0n5ense.taassistant.core.model.SourceEncoding
+import com.n0n5ense.taassistant.core.model.SourceFile
 import com.n0n5ense.taassistant.core.model.Student
+import com.n0n5ense.taassistant.core.model.SuspiciousCall
 import com.n0n5ense.taassistant.core.model.TestResult
 import com.n0n5ense.taassistant.core.model.encoding
 import kotlinx.coroutines.CancellationException
@@ -31,6 +33,7 @@ class GradingPipeline(private val toolkit: GradingToolkit) {
      * 1つのソースをテストする (課題を手動で割り当てたとき・課題の判定を自動に戻したとき)。
      * [tasks] が null ならソースの内容から課題を判定する。空ならどの課題でもない (NF)。
      * コンフィグにない課題は無視し、1つも残らなければソースの内容から判定する。
+     * [approved] が false なら、危ない可能性がある呼び出しのあるソースは実行せずに保留する。
      * 結果の id は 0 なので、呼び出し側で振り直す。
      */
     suspend fun testSource(
@@ -39,8 +42,9 @@ class GradingPipeline(private val toolkit: GradingToolkit) {
         tasks: List<TaskName>?,
         toolchain: JavaToolchain,
         parallelism: Int,
+        approved: Boolean = false,
     ): List<TestResult> =
-        planTests(config, compiled, tasks?.validIn(config))
+        planTests(config, compiled, tasks?.validIn(config), approved)
             .mapConcurrently(parallelism, onProgress = {}) { runTest(it, toolchain, config.runningTimeout) }
 
     /** 1回の採点。段階ごとの処理と、ログ・進み具合の通知を持つ */
@@ -100,10 +104,19 @@ class GradingPipeline(private val toolkit: GradingToolkit) {
                 parallelism = request.compileParallelism,
                 onProgress = { progress(Stage.Compile, it, sources.size) },
             ) { (student, source) ->
-                CompiledSource(source, toolkit.compile(source, student, request.toolchain, config.compileTimeout))
+                val outcome = toolkit.compile(source, student, request.toolchain, config.compileTimeout)
+                CompiledSource(source, inspect(source, outcome, request.toolchain))
             }
             val failures = compiled.count { it.outcome !is CompileOutcome.Success }
             log("${compiled.size} ファイルをコンパイルしました (失敗 $failures 件)")
+            val suspicious = compiled.filter { (it.outcome as? CompileOutcome.Success)?.suspicious?.isNotEmpty() == true }
+            if (suspicious.isNotEmpty()) {
+                log(
+                    "危ない可能性がある呼び出しのあるソースが ${suspicious.size} 件あります。確認するまで実行しません " +
+                        "(課題で許可した呼び出し・確認済みのソースは実行します)",
+                    LogLevel.Warning,
+                )
+            }
             compiled.filter { it.outcome is CompileOutcome.Error }.forEach {
                 log("${it.source.displayPath}: コンパイル時に内部エラーが発生しました", LogLevel.Error)
             }
@@ -112,7 +125,7 @@ class GradingPipeline(private val toolkit: GradingToolkit) {
 
         private suspend fun test(config: Config, compiled: List<CompiledSource>): List<TestResult> {
             val assignments = validAssignments(config)
-            val plans = compiled.flatMap { planTests(config, it, assignments[it.source.displayPath]) }
+            val plans = compiled.flatMap { planTests(config, it, assignments[it.source.displayPath], isApproved(it)) }
             progress(Stage.Test, total = plans.size)
             val results = plans.mapConcurrently(
                 parallelism = request.testParallelism,
@@ -125,6 +138,12 @@ class GradingPipeline(private val toolkit: GradingToolkit) {
             return results
         }
 
+        /** 危ない可能性がある呼び出しを確認して、実行を許可したソースか (ソースが変わっていれば許可しない) */
+        private fun isApproved(compiled: CompiledSource): Boolean {
+            val hash = (compiled.outcome as? CompileOutcome.Success)?.sourceHash.orEmpty()
+            return hash.isNotEmpty() && request.approvals[compiled.source.displayPath] == hash
+        }
+
         /** 割り当てからコンフィグにない課題を除く (除いた課題は警告する)。課題が残らなかったソースは自動の判定に戻す */
         private fun validAssignments(config: Config): Map<String, List<TaskName>> =
             request.assignments.mapNotNull { (path, tasks) ->
@@ -135,12 +154,40 @@ class GradingPipeline(private val toolkit: GradingToolkit) {
             }.toMap()
     }
 
+    /**
+     * 実行する前の検査。コンパイルできたソースについて、危ない可能性がある呼び出しを探し、ソースのハッシュを記録する。
+     * 調べられなかったときも、確認が必要なものとして扱う (確認なしに実行しない)
+     */
+    suspend fun inspect(source: SourceFile, outcome: CompileOutcome, toolchain: JavaToolchain): CompileOutcome {
+        if (outcome !is CompileOutcome.Success) return outcome
+        val suspicious = try {
+            SafetyCheck.detect(toolkit.listCalls(source, outcome, toolchain))
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            listOf(SuspiciousCall("(検査できませんでした)", e.message.orEmpty(), "検査できませんでした"))
+        }
+        val hash = try {
+            toolkit.sourceHash(source)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            ""
+        }
+        return outcome.copy(suspicious = suspicious, sourceHash = hash)
+    }
+
     /** [assigned] があればその課題として、なければソースの内容から判定した課題としてテストする */
-    private suspend fun planTests(config: Config, compiled: CompiledSource, assigned: List<TaskName>?): List<TestPlan> =
+    private suspend fun planTests(
+        config: Config,
+        compiled: CompiledSource,
+        assigned: List<TaskName>?,
+        approved: Boolean,
+    ): List<TestPlan> =
         if (assigned != null) {
-            planFor(config, compiled, assigned, assigned = true)
+            planFor(config, compiled, assigned, assigned = true, approved)
         } else {
-            planFor(config, compiled, detectTasks(config, readSourceOrEmpty(compiled)), assigned = false)
+            planFor(config, compiled, detectTasks(config, readSourceOrEmpty(compiled)), assigned = false, approved)
         }
 
     /** 読めないソースは空として扱う (どの課題にも当たらず NF になる) */
@@ -163,7 +210,7 @@ class GradingPipeline(private val toolkit: GradingToolkit) {
             assigned = plan.assigned,
         )
         return when (plan) {
-            is TestPlan.Fixed -> base.copy(autoJudge = plan.judge)
+            is TestPlan.Fixed -> base.copy(autoJudge = plan.judge, held = plan.held)
             is TestPlan.Execute -> try {
                 val execution = toolkit.execute(plan.target, plan.testCase, toolchain, timeoutMillis)
                 base.copy(autoJudge = AutoJudge.judge(plan.testCase, execution), execution = execution)
@@ -194,6 +241,8 @@ private sealed class TestPlan(
         assigned: Boolean,
         val judge: Judge,
         testCase: TestCase? = null,
+        /** 危ない可能性がある呼び出しがあるため、実行を保留している */
+        val held: Boolean = false,
     ) : TestPlan(compiled, taskName, assigned, testCase)
 
     /** 実行して判定する */
@@ -209,9 +258,17 @@ private sealed class TestPlan(
 /**
  * [tasks] としてテストする計画を立てる。課題がなければ NF、コンパイルに失敗していれば課題ごとに CE / IE、
  * テストケースのない課題は未判定とし、それ以外はテストケースごとに実行する。
- * 手動で判定する課題 ([com.n0n5ense.taassistant.core.config.Task.manual]) は実行せず、テストケースごとに未判定にする
+ * 手動で判定する課題 ([com.n0n5ense.taassistant.core.config.Task.manual]) は実行せず、テストケースごとに未判定にする。
+ * 危ない可能性がある呼び出しがあり、課題で許可されておらず確認もしていなければ ([approved])、実行せずに保留する
+ * (メソッド呼び出しの確認は実行しないので保留しない)
  */
-private fun planFor(config: Config, compiled: CompiledSource, tasks: List<TaskName>, assigned: Boolean): List<TestPlan> {
+private fun planFor(
+    config: Config,
+    compiled: CompiledSource,
+    tasks: List<TaskName>,
+    assigned: Boolean,
+    approved: Boolean,
+): List<TestPlan> {
     if (tasks.isEmpty()) return listOf(TestPlan.Fixed(compiled, null, assigned, Judge.NF))
     return tasks.flatMap { task ->
         when (val outcome = compiled.outcome) {
@@ -219,13 +276,15 @@ private fun planFor(config: Config, compiled: CompiledSource, tasks: List<TaskNa
             is CompileOutcome.Failure -> listOf(TestPlan.Fixed(compiled, task, assigned, Judge.CE))
             is CompileOutcome.Success -> {
                 val definition = config.tasks.getValue(task)
+                val held = !approved && SafetyCheck.blocking(outcome.suspicious, definition.allowCalls).isNotEmpty()
                 definition.testcase
                     .map<TestCase, TestPlan> {
-                        // メソッド呼び出しの確認は実行しないので、手動で判定する課題でも自動で行う
-                        if (definition.manual && it.calls.isEmpty()) {
-                            TestPlan.Fixed(compiled, task, assigned, Judge.Unknown, testCase = it)
-                        } else {
-                            TestPlan.Execute(compiled, outcome, task, it, assigned)
+                        when {
+                            // メソッド呼び出しの確認は実行しないので、保留せず、手動で判定する課題でも自動で行う
+                            it.calls.isNotEmpty() -> TestPlan.Execute(compiled, outcome, task, it, assigned)
+                            held -> TestPlan.Fixed(compiled, task, assigned, Judge.Unknown, testCase = it, held = true)
+                            definition.manual -> TestPlan.Fixed(compiled, task, assigned, Judge.Unknown, testCase = it)
+                            else -> TestPlan.Execute(compiled, outcome, task, it, assigned)
                         }
                     }
                     .ifEmpty { listOf(TestPlan.Fixed(compiled, task, assigned, Judge.Unknown)) }

@@ -784,6 +784,17 @@ private fun TaskEditor(
                 manual = task.manual,
                 onChange = { v -> viewModel.updateTask(task.key) { it.copy(manual = v) } },
             )
+            EditorField(
+                label = "確認なしで実行してよい呼び出し (任意)",
+                value = task.allowCalls,
+                onValueChange = { v -> viewModel.updateTask(task.key) { it.copy(allowCalls = v) } },
+                hint = "外部プログラムの起動・ファイルの書き込み・ネットワーク・リフレクションなどを呼ぶ提出は、確認するまで実行しません。" +
+                    "この課題で使うものを1行に1つ書くと、確認なしで実行します (例: new FileWriter / Files.write / Files.*)",
+                placeholder = "new FileWriter",
+                monospaced = true,
+                minLines = 2,
+                modifier = Modifier.fillMaxWidth(),
+            )
             task.testCases.forEachIndexed { caseIndex, testCase ->
                 val nameError = issue(DraftField.TestCaseName, testCase.key)
                 val expectError = issue(DraftField.Expect, testCase.key)

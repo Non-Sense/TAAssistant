@@ -22,6 +22,7 @@ import java.nio.charset.Charset
 import java.nio.file.FileSystemException
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
+import java.security.MessageDigest
 
 class JvmGradingToolkit : GradingToolkit {
 
@@ -228,6 +229,7 @@ class JvmGradingToolkit : GradingToolkit {
             "-J-Duser.language=en",
             "-J-Dstdout.encoding=UTF-8",
             "-J-Dstderr.encoding=UTF-8",
+            "-proc:none",
             "-encoding", encoding.charsetName,
             "-d", destination.absolutePath,
             "-cp", classRoot.absolutePath,
@@ -272,6 +274,46 @@ class JvmGradingToolkit : GradingToolkit {
     override suspend fun readSource(source: SourceFile, encoding: SourceEncoding): String =
         withContext(Dispatchers.IO) { File(source.path).readText(encoding.charset) }
 
+    override suspend fun listCalls(
+        source: SourceFile,
+        target: CompileOutcome.Success,
+        toolchain: JavaToolchain,
+    ): List<CallSite> = withContext(Dispatchers.IO) {
+        val sourceName = File(source.path).name
+        val classFiles = File(target.classPath).walkTopDown()
+            .filter { it.isFile && it.extension == "class" }
+            .sortedBy { it.path }
+            .toList()
+        // コマンドラインが長くなりすぎないよう、分けて逆アセンブルする
+        val classes = classFiles.chunked(100).flatMap { chunk ->
+            val command = listOf(
+                toolchain.executable("javap"),
+                "-J-Duser.language=en",
+                "-J-Dstdout.encoding=UTF-8",
+                "-J-Dstderr.encoding=UTF-8",
+                "-c", "-p",
+            ) + chunk.map { it.absolutePath }
+            val output = runProcess(command, null, JAVAP_TIMEOUT_MILLIS)
+            check(!output.timedOut && output.exitCode == 0) {
+                "javap でクラスを調べられませんでした: " + decodeText(output.stderr).ifBlank { decodeText(output.stdout) }
+            }
+            Javap.parse(decodeText(output.stdout))
+        }
+        // 同じ学生の他のソースから作られたクラスは除く (ソースファイル名とパッケージで見分ける)
+        val prefix = target.packageName?.let { "$it." }.orEmpty()
+        val own = classes.filter { c ->
+            c.sourceFile == sourceName && c.className.startsWith(prefix) &&
+                (prefix.isNotEmpty() || '.' !in c.className)
+        }
+        check(own.any { it.className == target.mainClass }) { "${target.mainClass} のクラスファイルが見つかりません" }
+        own.flatMap { it.calls }
+    }
+
+    override suspend fun sourceHash(source: SourceFile): String = withContext(Dispatchers.IO) {
+        MessageDigest.getInstance("SHA-256").digest(File(source.path).readBytes())
+            .joinToString("") { "%02x".format(it) }
+    }
+
     override suspend fun execute(
         target: CompileOutcome.Success,
         testCase: TestCase,
@@ -307,7 +349,8 @@ class JvmGradingToolkit : GradingToolkit {
                 "-J-Duser.language=en",
                 "-J-Dstdout.encoding=UTF-8",
                 "-J-Dstderr.encoding=UTF-8",
-                "-encoding", "UTF-8",
+                "-proc:none",
+            "-encoding", "UTF-8",
                 "-d", classes.absolutePath,
                 "-cp", target.classPath,
                 sourceFile.absolutePath,
@@ -383,11 +426,18 @@ class JvmGradingToolkit : GradingToolkit {
             "-Dfile.encoding=UTF-8",
             "-Dstdout.encoding=UTF-8",
             "-Dstderr.encoding=UTF-8",
+            "-Xmx$MAX_HEAP",
             "-cp", classPath,
             mainClass,
         ) + splitArguments(testCase.arg)
         val stdin = testCase.input.joinToString("") { "$it\n" }.toByteArray(Charsets.UTF_8)
-        val output = runProcess(command, stdin, timeoutMillis)
+        // 作業ディレクトリは毎回作って捨てる (相対パスでのファイル操作が、提出物やプロジェクトを壊さないように)
+        val workingDir = Files.createTempDirectory("taa-run-").toFile()
+        val output = try {
+            runProcess(command, stdin, timeoutMillis, workingDir)
+        } finally {
+            workingDir.deleteRecursively()
+        }
         return Execution(
             command = command.toCommandLine(),
             stdout = decodeText(output.stdout),
@@ -456,6 +506,9 @@ class JvmGradingToolkit : GradingToolkit {
         const val COMPILE_DIR = "compile"
         const val TEST_CODE_COMPILE_TIMEOUT_MILLIS = 60_000L
         const val JAVAP_TIMEOUT_MILLIS = 60_000L
+
+        /** 提出されたプログラムが使えるメモリの上限 */
+        const val MAX_HEAP = "1g"
     }
 }
 

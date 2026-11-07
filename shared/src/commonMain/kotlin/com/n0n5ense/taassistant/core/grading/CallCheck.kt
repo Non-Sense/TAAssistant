@@ -49,6 +49,7 @@ object CallCheck {
      * - `sort`: メソッド名だけ
      * - `Arrays.sort` / `java.util.Arrays.sort`: クラス名 (パッケージは省略可) とメソッド名
      * - `new ArrayList` / `ArrayList.<init>`: コンストラクタ
+ * - `Files.*`: そのクラスのすべてのメソッド
      * 末尾の `()` は無視する
      */
     fun matches(required: String, call: String): Boolean {
@@ -62,7 +63,8 @@ object CallCheck {
         if (specDot < 0) return callName == spec
         val specOwner = spec.substring(0, specDot)
         val specName = spec.substring(specDot + 1)
-        if (callName != specName) return false
+        // `クラス.*` はそのクラスのすべてのメソッド
+        if (specName != "*" && callName != specName) return false
         // 入れ子のクラスは javap では Outer$Inner になる
         val owner = callOwner.replace('$', '.')
         return owner == specOwner || owner.endsWith(".$specOwner")

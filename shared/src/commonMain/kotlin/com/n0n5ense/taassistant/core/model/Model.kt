@@ -75,6 +75,10 @@ sealed interface CompileOutcome {
         /** -d で指定した出力先 (実行時の classpath) */
         val classPath: String,
         val warnings: String = "",
+        /** 危ない可能性がある呼び出し (見つかったら、確認するまで実行しない) */
+        val suspicious: List<SuspiciousCall> = emptyList(),
+        /** ソースの内容のハッシュ (確認済みかを判断する。内容が変わったら確認し直す) */
+        val sourceHash: String = "",
     ) : CompileOutcome {
         val mainClass: String get() = packageName?.let { "$it.$className" } ?: className
     }
@@ -136,6 +140,17 @@ data class Execution(
     val mainCalls: List<String>? = null,
 )
 
+/** 実行する前の検査で見つかった、危ない可能性がある呼び出し */
+@Serializable
+data class SuspiciousCall(
+    /** 呼び出し先 (パッケージ付きのクラス名.メソッド名) */
+    val call: String,
+    /** 呼び出している場所 (パッケージ付きのクラス名.メソッド名) */
+    val location: String,
+    /** 種類 (外部プログラムの起動・ファイルの書き込みなど) */
+    val category: String,
+)
+
 /** 1ソースファイル × 1課題 × 1テストケース の結果 */
 @Serializable
 data class TestResult(
@@ -153,6 +168,8 @@ data class TestResult(
     val note: String = "",
     /** 課題を手動で割り当てて実行した結果 */
     val assigned: Boolean = false,
+    /** 危ない可能性がある呼び出しがあるため、実行を保留している (確認すると実行する) */
+    val held: Boolean = false,
 ) {
     val studentId: StudentId get() = source.studentId
     val judge: Judge get() = manualJudge ?: autoJudge
