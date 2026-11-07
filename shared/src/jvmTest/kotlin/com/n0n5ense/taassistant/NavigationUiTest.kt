@@ -57,10 +57,10 @@ class NavigationUiTest {
         dir.deleteRecursively()
     }
 
-    /** 前回開いていたプロジェクトとして [projectPath] を返す。実際の Preferences には触れない */
     /** 保存先を選ぶダイアログの代わりに返すパス */
     private val savePaths = ArrayDeque<String>()
 
+    /** 前回開いていたプロジェクトとして [projectPath] を返す。実際の Preferences には触れない */
     private fun services(projectPath: String): PlatformServices {
         val real = createPlatformServices()
         val values = mutableMapOf("lastProject" to projectPath)
@@ -341,6 +341,26 @@ class NavigationUiTest {
             }
         }
         waitUntil(timeoutMillis = 10_000) { exists(hasText("第1回")) }
+
+        // 結果の書き出しは実行後の任意の操作: 形式を選ぶと保存先を聞かれる
+        fun export(format: String, path: File) {
+            savePaths += path.path
+            onNode(hasText("結果を書き出す")).performClick()
+            waitUntil(timeoutMillis = 10_000) { exists(hasText(format)) }
+            onNode(hasText(format)).performClick()
+        }
+        val xlsx = File(dir, "out/結果.xlsx")
+        export("Excel (.xlsx)…", xlsx)
+        waitUntil(timeoutMillis = 10_000) { xlsx.isFile && exists(hasText("書き出しました:")) }
+        assertTrue(exists(hasText("結果.xlsx")))
+        // CSV は詳細とサマリーの 2 ファイルになる
+        export("CSV (Shift_JIS)…", File(dir, "out/結果.csv"))
+        waitUntil(timeoutMillis = 10_000) {
+            File(dir, "out/結果-detail.csv").isFile && File(dir, "out/結果-summary.csv").isFile
+        }
+        waitUntil(timeoutMillis = 10_000) { exists(hasText("結果-summary.csv")) }
+        onNode(hasContentDescription("閉じる")).performClick()
+        waitUntil(timeoutMillis = 10_000) { !exists(hasText("書き出しました:")) }
 
         fun menu(item: String) {
             onNode(hasContentDescription("プロジェクト")).performClick()

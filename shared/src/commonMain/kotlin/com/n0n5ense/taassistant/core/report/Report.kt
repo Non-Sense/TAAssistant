@@ -235,8 +235,8 @@ object Csv {
 fun formatMillis(ms: Double): String = ((ms * 1000).roundToLong() / 1000.0).toString()
 
 /** 結果ファイルの形式 */
-enum class ReportFormat(val label: String) {
-    Xlsx("Excel (.xlsx)"),
-    Csv("CSV (UTF-8)"),
-    CsvShiftJis("CSV (Shift_JIS)"),
+enum class ReportFormat(val label: String, val extension: String) {
+    Xlsx("Excel (.xlsx)", "xlsx"),
+    Csv("CSV (UTF-8)", "csv"),
+    CsvShiftJis("CSV (Shift_JIS)", "csv"),
 }

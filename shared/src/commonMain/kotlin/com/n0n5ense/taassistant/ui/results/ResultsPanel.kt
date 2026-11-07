@@ -686,9 +686,9 @@ private fun ResultDetail(
     onOpenStudent: (() -> Unit)?,
     modifier: Modifier = Modifier,
 ) {
-    var showSource by rememberSaveable(result.source.path) { mutableStateOf(false) }
-    val source by produceState<String?>(null, result.source.path, showSource) {
-        value = if (showSource) viewModel.readSource(result) else null
+    val source by produceState<String?>(null, result.source.path) {
+        value = null
+        value = viewModel.readSource(result)
     }
     val scroll = rememberScrollState()
     // 別の結果を選んだときだけ先頭に戻す (タブを切り替えて戻ってきたときは戻さない)
@@ -869,15 +869,9 @@ private fun ResultDetail(
             if (result.note.isNotBlank()) TextBlock("内部エラー", result.note.trimEnd())
 
             HorizontalDivider()
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(onClick = { showSource = !showSource }) {
-                    Text(if (showSource) "ソースを隠す" else "ソースを表示")
-                }
-                TextButton(onClick = { viewModel.openPath(result.source.path) }) { Text("エディタで開く") }
-            }
-            if (showSource) {
-                TextBlock(result.source.fileName, source ?: "読み込み中…")
-            }
+            // ソースは常に表示する (長いソースでも埋もれないよう、エディタで開くボタンは先に置く)
+            TextButton(onClick = { viewModel.openPath(result.source.path) }) { Text("エディタで開く") }
+            TextBlock(result.source.fileName, source ?: "読み込み中…")
         }
         AppVerticalScrollbar(scroll, Modifier.align(Alignment.CenterEnd).fillMaxHeight())
     }

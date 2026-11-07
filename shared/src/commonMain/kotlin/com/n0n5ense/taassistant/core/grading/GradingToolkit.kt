@@ -93,11 +93,9 @@ interface GradingToolkit {
         timeoutMillis: Long,
     ): Execution
 
-    /** 結果ファイルを書き出し、書き出したファイルのパスを返す */
-    suspend fun writeReport(
-        outputDir: String,
-        baseName: String,
-        format: ReportFormat,
-        report: Report
-    ): List<String>
+    /**
+     * 結果ファイルを [path] に書き出し、書き出したファイルのパスを返す。
+     * CSV は 1 ファイルに収まらないので、[path] の名前に -detail / -summary を付けた 2 ファイルにする
+     */
+    suspend fun writeReport(path: String, format: ReportFormat, report: Report): List<String>
 }

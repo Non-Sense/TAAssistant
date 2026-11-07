@@ -300,16 +300,17 @@ class JvmGradingToolkit : GradingToolkit {
     }
 
     override suspend fun writeReport(
-        outputDir: String,
-        baseName: String,
+        path: String,
         format: ReportFormat,
         report: Report,
     ): List<String> = withContext(Dispatchers.IO) {
-        val dir = File(outputDir).apply { mkdirs() }
-        require(dir.isDirectory) { "出力先ディレクトリを作成できません: $outputDir" }
+        val target = File(path).absoluteFile
+        val dir = target.parentFile.apply { mkdirs() }
+        require(dir.isDirectory) { "書き出し先のディレクトリを作成できません: ${dir.path}" }
+        val baseName = target.name.substringBeforeLast('.').ifEmpty { target.name }
         when (format) {
             ReportFormat.Xlsx -> {
-                val file = File(dir, "$baseName.xlsx")
+                val file = File(dir, "$baseName.${format.extension}")
                 writeReplacing(file) { ExcelReportWriter.write(it, report) }
                 listOf(file.absolutePath)
             }

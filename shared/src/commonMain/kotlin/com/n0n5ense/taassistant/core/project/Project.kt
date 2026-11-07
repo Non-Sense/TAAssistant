@@ -20,11 +20,12 @@ import kotlinx.serialization.json.jsonPrimitive
 data class ProjectSettings(
     val rootDir: String = "",
     val configPath: String = "",
+    /** 最後に結果を書き出したディレクトリ (次の書き出しの初期位置) */
     val outputDir: String = "",
     val lastStep: LastStep = LastStep.Test,
     val parallelTests: Boolean = true,
     val cleanWorkspace: Boolean = true,
-    val autoExport: Boolean = true,
+    /** 最後に書き出した形式 (書き出しメニューの先頭に出す) */
     val reportFormat: ReportFormat = ReportFormat.Xlsx,
     val jdkBinDir: String = "",
 )

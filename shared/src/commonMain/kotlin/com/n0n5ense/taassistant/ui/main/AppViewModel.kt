@@ -55,7 +55,12 @@ sealed interface RunStatus {
 
 data class LogLine(val message: String, val level: LogLevel)
 
-data class ExportStatus(val message: String, val paths: List<String>, val isError: Boolean)
+/** 結果の書き出しの状態 */
+sealed interface ExportStatus {
+    data object Writing : ExportStatus
+    data class Done(val paths: List<String>) : ExportStatus
+    data class Failed(val message: String) : ExportStatus
+}
 
 /** 開いているプロジェクト */
 data class OpenProject(val path: String) {
@@ -97,7 +102,9 @@ data class UiState(
     val resultView: ResultViewState = ResultViewState(),
 ) {
     val isRunning: Boolean get() = status is RunStatus.Running
-    val canExport: Boolean get() = !isRunning && outcome?.lastStep == LastStep.Test
+    /** 結果を書き出せる (テストまで実行した結果がある) */
+    val canExport: Boolean
+        get() = !isRunning && outcome?.lastStep == LastStep.Test && export != ExportStatus.Writing
     val selected: TestResult? get() = selectedId?.let { id -> results.firstOrNull { it.id == id } }
 }
 
@@ -408,13 +415,7 @@ class AppViewModel(
             services.pickDirectory(
                 "提出物ディレクトリを選択",
                 current.rootDir.ifBlank { projectDir() })?.let { path ->
-                updateSetup {
-                    it.copy(
-                        rootDir = path,
-                        outputDir = it.outputDir.ifBlank {
-                            services.parentDirectory(path).orEmpty()
-                        })
-                }
+                updateSetup { it.copy(rootDir = path) }
             }
         }
     }
@@ -427,16 +428,6 @@ class AppViewModel(
                 current.configPath.ifBlank { current.rootDir.ifBlank { projectDir() } },
                 listOf("yaml", "yml"),
             )?.let { path -> updateSetup { it.copy(configPath = path) } }
-        }
-    }
-
-    fun browseOutputDir() {
-        val current = state.value.setup
-        viewModelScope.launch {
-            services.pickDirectory(
-                "出力先ディレクトリを選択",
-                current.outputDir.ifBlank { current.rootDir.ifBlank { projectDir() } })
-                ?.let { path -> updateSetup { it.copy(outputDir = path) } }
         }
     }
 
@@ -520,7 +511,6 @@ class AppViewModel(
                         ),
                     )
                 }
-                if (outcome.lastStep == LastStep.Test && setup.autoExport) export()
             } catch (e: CancellationException) {
                 appendLog("中止しました", LogLevel.Warning)
                 restorePrevious(RunStatus.Cancelled)
@@ -662,36 +652,54 @@ class AppViewModel(
 
     fun openPath(path: String) = services.openPath(path)
 
+    fun openContainingFolder(path: String) {
+        services.parentDirectory(path)?.let(services::openPath)
+    }
+
     // ------------------------------------------------------------ export
 
-    fun export() {
+    /**
+     * 採点結果を [format] で書き出す。保存先はダイアログで選ぶ
+     * (初期位置は前回書き出したディレクトリ、なければ提出物ディレクトリの親)
+     */
+    fun export(format: ReportFormat) {
         val snapshot = state.value
+        if (!snapshot.canExport) return
         val outcome = snapshot.outcome ?: return
         val setup = snapshot.setup
-        val outputDir =
-            setup.outputDir.ifBlank { services.parentDirectory(setup.rootDir) ?: setup.rootDir }
+        val initialDir = setup.outputDir.ifBlank {
+            setup.rootDir.takeIf { it.isNotBlank() }?.let(services::parentDirectory) ?: projectDir()
+        }
         viewModelScope.launch {
+            val path = services.pickSaveFile(
+                title = "結果を書き出す (${format.label})",
+                initial = initialDir,
+                extensions = listOf(format.extension),
+                suggestedName = outcome.config.outputFileName,
+            ) ?: return@launch
+            _state.update { it.copy(export = ExportStatus.Writing) }
             val status = try {
                 val paths = withContext(Dispatchers.Default) {
                     val report = buildReport(outcome.config, outcome.students, state.value.results)
-                    services.toolkit.writeReport(
-                        outputDir,
-                        outcome.config.outputFileName,
-                        setup.reportFormat,
-                        report
-                    )
+                    services.toolkit.writeReport(path, format, report)
                 }
-                paths.forEach { appendLog("出力しました: $it", LogLevel.Info) }
-                ExportStatus("結果ファイルを出力しました", paths, isError = false)
+                paths.forEach { appendLog("書き出しました: $it", LogLevel.Info) }
+                ExportStatus.Done(paths)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                appendLog("出力に失敗しました: ${e.message}", LogLevel.Error)
-                ExportStatus("出力に失敗しました: ${e.message}", emptyList(), isError = true)
+                appendLog("書き出しに失敗しました: ${e.message}", LogLevel.Error)
+                ExportStatus.Failed("書き出しに失敗しました: ${e.message}")
             }
             _state.update { it.copy(export = status) }
+            // 次の書き出しの初期値にする
+            updateSetup {
+                it.copy(outputDir = services.parentDirectory(path) ?: it.outputDir, reportFormat = format)
+            }
         }
     }
+
+    fun dismissExport() = _state.update { it.copy(export = null) }
 
     // ------------------------------------------------------------ 新しいプロジェクトの初期値
     // パスはプロジェクトごとに .taa に保存するので、Preferences には実行オプションと JDK だけを残す
@@ -699,12 +707,12 @@ class AppViewModel(
     private fun loadDefaultOptions(): SetupState {
         val s = services.settings
         val default = SetupState()
+        s.remove(LEGACY_KEY_AUTO_EXPORT)
         return SetupState(
             lastStep = s.get(KEY_LAST_STEP)
                 ?.let { v -> LastStep.entries.firstOrNull { it.name == v } } ?: default.lastStep,
             parallelTests = s.get(KEY_PARALLEL)?.toBooleanStrictOrNull() ?: default.parallelTests,
             cleanWorkspace = s.get(KEY_CLEAN)?.toBooleanStrictOrNull() ?: default.cleanWorkspace,
-            autoExport = s.get(KEY_AUTO_EXPORT)?.toBooleanStrictOrNull() ?: default.autoExport,
             reportFormat = s.get(KEY_FORMAT)
                 ?.let { v -> ReportFormat.entries.firstOrNull { it.name == v } }
                 ?: default.reportFormat,
@@ -717,7 +725,6 @@ class AppViewModel(
         s.put(KEY_LAST_STEP, setup.lastStep.name)
         s.put(KEY_PARALLEL, setup.parallelTests.toString())
         s.put(KEY_CLEAN, setup.cleanWorkspace.toString())
-        s.put(KEY_AUTO_EXPORT, setup.autoExport.toString())
         s.put(KEY_FORMAT, setup.reportFormat.name)
         s.put(KEY_JDK, setup.jdkBinDir)
     }
@@ -738,7 +745,6 @@ class AppViewModel(
         const val KEY_LAST_STEP = "lastStep"
         const val KEY_PARALLEL = "parallelTests"
         const val KEY_CLEAN = "cleanWorkspace"
-        const val KEY_AUTO_EXPORT = "autoExport"
         const val KEY_FORMAT = "reportFormat"
         const val KEY_JDK = "jdkBinDir"
         const val KEY_LAST_PROJECT = "lastProject"
@@ -748,5 +754,8 @@ class AppViewModel(
         const val LEGACY_KEY_ROOT = "rootDir"
         const val LEGACY_KEY_CONFIG = "configPath"
         const val LEGACY_KEY_OUTPUT = "outputDir"
+
+        /** 完了時に自動で書き出す設定 (書き出しは実行後に任意で行うようにしたので廃止) */
+        const val LEGACY_KEY_AUTO_EXPORT = "autoExport"
     }
 }

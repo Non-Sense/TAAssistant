@@ -155,7 +155,8 @@ class PipelineIntegrationTest {
         assertEquals(listOf(Judge.NF, Judge.NF, Judge.NF), summaryOf.getValue("t0000004").stats)
 
         val outDir = File(root, "out")
-        val xlsx = toolkit.writeReport(outDir.path, "result", ReportFormat.Xlsx, report).single()
+        val xlsx = toolkit.writeReport(File(outDir, "result.xlsx").path, ReportFormat.Xlsx, report).single()
+        assertEquals("result.xlsx", File(xlsx).name)
         XSSFWorkbook(File(xlsx)).use { wb ->
             assertEquals(
                 listOf("Detail", "Summary"),
@@ -164,13 +165,13 @@ class PipelineIntegrationTest {
             assertEquals(outcome.results.size, wb.getSheet("Detail").lastRowNum)
             assertEquals(4, wb.getSheet("Summary").lastRowNum)
         }
-        val csv = toolkit.writeReport(outDir.path, "result", ReportFormat.CsvShiftJis, report)
-        assertEquals(2, csv.size)
+        val csv = toolkit.writeReport(File(outDir, "result.csv").path, ReportFormat.CsvShiftJis, report)
+        assertEquals(listOf("result-detail.csv", "result-summary.csv"), csv.map { File(it).name })
         assertTrue(File(csv[1]).readText(shiftJis).contains("山田 太郎"))
 
         // UTF-8 のファイルは BOM 無しで書き出す
         val utf8Bom = byteArrayOf(0xEF.toByte(), 0xBB.toByte(), 0xBF.toByte())
-        val utf8Csv = toolkit.writeReport(outDir.path, "result", ReportFormat.Csv, report)
+        val utf8Csv = toolkit.writeReport(File(outDir, "result.csv").path, ReportFormat.Csv, report)
         utf8Csv.forEach { path ->
             val bytes = File(path).readBytes()
             assertFalse(bytes.take(3) == utf8Bom.toList(), "$path に BOM が付いています")

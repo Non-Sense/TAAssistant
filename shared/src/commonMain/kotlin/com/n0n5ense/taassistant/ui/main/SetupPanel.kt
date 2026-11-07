@@ -22,7 +22,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.n0n5ense.taassistant.core.grading.LastStep
-import com.n0n5ense.taassistant.core.report.ReportFormat
 import com.n0n5ense.taassistant.ui.common.AppVerticalScrollbar
 import com.n0n5ense.taassistant.ui.common.CheckRow
 import com.n0n5ense.taassistant.ui.common.MenuEntry
@@ -74,14 +73,6 @@ internal fun SetupPanel(
                             if (configEditorDirty) "  ● 未保存の変更あり" else "",
                 )
             }
-            PathField(
-                label = "出力先ディレクトリ",
-                value = setup.outputDir,
-                onValueChange = { v -> viewModel.updateSetup { it.copy(outputDir = v) } },
-                onBrowse = viewModel::browseOutputDir,
-                enabled = editable,
-                hint = "空欄なら提出物ディレクトリの親に出力します",
-            )
 
             SectionLabel("実行ステップ")
             Column {
@@ -99,22 +90,6 @@ internal fun SetupPanel(
                 }
                 CheckRow("実行前に workspace を初期化する", setup.cleanWorkspace, editable) { v ->
                     viewModel.updateSetup { it.copy(cleanWorkspace = v) }
-                }
-                CheckRow("完了時に結果ファイルを出力する", setup.autoExport, editable) { v ->
-                    viewModel.updateSetup { it.copy(autoExport = v) }
-                }
-            }
-
-            SectionLabel("出力形式")
-            Column {
-                ReportFormat.entries.forEach { format ->
-                    RadioRow(
-                        format.label,
-                        selected = setup.reportFormat == format,
-                        enabled = editable
-                    ) {
-                        viewModel.updateSetup { it.copy(reportFormat = format) }
-                    }
                 }
             }
 
@@ -149,30 +124,6 @@ internal fun SetupPanel(
             OutlinedButton(onClick = onOpenLog, modifier = Modifier.fillMaxWidth()) {
                 Text("ログ", modifier = Modifier.padding(end = 12.dp))
                 LogCounts(state.logs)
-            }
-            OutlinedButton(
-                onClick = viewModel::export,
-                enabled = state.canExport,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text("結果ファイルを出力")
-            }
-
-            state.export?.let { export ->
-                Text(
-                    export.message,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = if (export.isError) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                export.paths.forEach { path ->
-                    TextButton(onClick = { viewModel.openPath(path) }) {
-                        Text(
-                            "開く: " + path.substringAfterLast('/').substringAfterLast('\\'),
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                    }
-                }
             }
         }
         AppVerticalScrollbar(scroll, Modifier.align(Alignment.CenterEnd).fillMaxHeight())
