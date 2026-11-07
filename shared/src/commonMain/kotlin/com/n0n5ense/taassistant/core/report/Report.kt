@@ -45,6 +45,8 @@ data class DetailRow(
     val className: String,
     val runCommand: String,
     val compileCommand: String,
+    /** 自分で書いたテストコード */
+    val testCode: String = "",
 ) {
     /** 各セルの値。String / Double / null(空セル) */
     fun cells(): List<Any?> = listOf(
@@ -65,6 +67,7 @@ data class DetailRow(
         className,
         runCommand,
         compileCommand,
+        testCode,
     )
 
     companion object {
@@ -86,6 +89,7 @@ data class DetailRow(
             "class",
             "runCommand",
             "compileCommand",
+            "testCode",
         )
         val statColumn: Int = header.indexOf("stat")
         val wrapColumns: Set<Int> =
@@ -112,7 +116,8 @@ data class DetailRow(
                     .normalizeNewlines()
                     .trimEnd(),
                 compileError = when (compile) {
-                    is CompileOutcome.Success -> ""
+                    // テストコードのコンパイルエラーもここに出す
+                    is CompileOutcome.Success -> execution?.testCodeError?.let { "TestCodeError:\n$it" }.orEmpty()
                     is CompileOutcome.Failure -> compile.message
                     is CompileOutcome.Error -> "InternalError:\n${compile.message}"
                 }.normalizeNewlines().trimEnd(),
@@ -120,6 +125,7 @@ data class DetailRow(
                 className = (compile as? CompileOutcome.Success)?.className.orEmpty(),
                 runCommand = execution?.command.orEmpty(),
                 compileCommand = compile.command,
+                testCode = result.testCase?.testCode?.trimEnd().orEmpty(),
             )
         }
     }

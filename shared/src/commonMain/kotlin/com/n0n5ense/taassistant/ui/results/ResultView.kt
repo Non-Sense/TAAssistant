@@ -12,8 +12,8 @@ enum class ResultFilter(val label: String, val accepts: (TestResult) -> Boolean)
     Executed("実行したもの", { it.execution != null }),
     Manual("手動判定・割り当て", { it.manualJudge != null || it.assigned }),
     NotRun(
-        "NF / CE / IE",
-        { it.judge == Judge.NF || it.judge == Judge.CE || it.judge == Judge.IE }),
+        "NF / CE / TCE / IE",
+        { it.judge == Judge.NF || it.judge == Judge.CE || it.judge == Judge.TCE || it.judge == Judge.IE }),
 }
 
 /** 学生の中の、課題ごとのまとまり (課題を特定できなかった結果は [taskName] = null) */

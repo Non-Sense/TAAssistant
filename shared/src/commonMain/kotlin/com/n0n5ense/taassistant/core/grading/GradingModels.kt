@@ -38,7 +38,10 @@ data class GradingRequest(
     val testParallelism: Int = 4,
     val cleanWorkspace: Boolean = true,
     val toolchain: JavaToolchain = JavaToolchain(),
-    /** 手動で割り当てた課題 (キーはソースの [SourceFile.displayPath])。自動の課題判定より優先する */
+    /**
+     * 手動で決めた課題 (キーはソースの [SourceFile.displayPath])。自動の課題判定より優先する。
+     * 空のリストは「どの課題でもない」(紐づけをすべて外した) を表す
+     */
     val assignments: Map<String, List<TaskName>> = emptyMap(),
 )
 

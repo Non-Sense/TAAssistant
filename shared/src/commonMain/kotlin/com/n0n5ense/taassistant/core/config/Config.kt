@@ -90,6 +90,12 @@ data class TestCase(
     val input: List<String> = emptyList(),
     /** 想定標準出力 (正規表現)。改行を空白に置換した標準出力全体と、すべてがマッチすれば AC */
     val expect: List<String> = emptyList(),
+    /**
+     * 自分で書いたテストコード (Java)。null なら提出されたクラスの main を実行する。
+     * `public class 名前` を含めばクラス全体、含まなければ main の中身として扱う
+     * (詳しくは [com.n0n5ense.taassistant.core.grading.TestCode])
+     */
+    val testCode: String? = null,
 ) {
     @Transient
     val expectRegex: List<Regex> = expect.map(::Regex)

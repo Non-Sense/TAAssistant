@@ -20,7 +20,8 @@ import com.n0n5ense.taassistant.core.project.ProjectFile
 import com.n0n5ense.taassistant.core.project.ProjectSettings
 import com.n0n5ense.taassistant.core.project.TaskAssignment
 import com.n0n5ense.taassistant.core.project.carryOverManualJudges
-import com.n0n5ense.taassistant.core.project.removeAssigned
+import com.n0n5ense.taassistant.core.project.replaceSourceResults
+import com.n0n5ense.taassistant.core.project.unlinkTask
 import com.n0n5ense.taassistant.core.project.replaceWithAssigned
 import com.n0n5ense.taassistant.core.report.ReportFormat
 import com.n0n5ense.taassistant.core.report.buildReport
@@ -626,20 +627,77 @@ class AppViewModel(
         }
     }
 
-    /** 課題の割り当てを解除して NF に戻す */
-    fun unassignTask(resultId: Int) {
+    /**
+     * ソースと課題の紐づけを外す (1つの課題に複数のソースが当たる CF の対策など)。
+     * テストは実行し直さず、その課題の結果を取り除く。課題が残らなければ NF にする
+     */
+    fun unlinkTask(resultId: Int) {
         val s = state.value
         if (s.isRunning || s.assigningSource != null) return
-        val result = s.results.firstOrNull { it.id == resultId && it.assigned } ?: return
+        val target = s.results.firstOrNull { it.id == resultId } ?: return
+        val task = target.taskName ?: return
+        val source = target.source
+        val remaining = s.results.filter { it.source == source }.mapNotNull { it.taskName }.distinct() - task
         _state.update { st ->
-            val results = st.results.removeAssigned(result.source)
+            val results = st.results.unlinkTask(source, task)
             st.copy(
                 results = results,
-                assignments = st.assignments - result.source.displayPath,
-                selectedId = results.firstOrNull { it.source == result.source && it.taskName == null }?.id,
+                assignments = st.assignments + (source.displayPath to remaining),
+                selectedId = results.firstOrNull { it.source == source }?.id ?: st.selectedId,
             )
         }
-        appendLog("${result.source.displayPath} の課題の割り当てを解除しました", LogLevel.Info)
+        appendLog(
+            "${source.displayPath} を課題「$task」から外しました" +
+                if (remaining.isEmpty()) " (どの課題でもなくなりました)" else "",
+            LogLevel.Info,
+        )
+    }
+
+    /**
+     * 手動で決めた課題 (割り当て・紐づけの解除) をやめ、ソースの内容から課題を判定し直してテストする。
+     * 同じ課題・テストケースの手動判定は引き継ぐ
+     */
+    fun restoreAutoTasks(resultId: Int) {
+        val s = state.value
+        if (s.isRunning || s.assigningSource != null) return
+        val outcome = s.outcome ?: return
+        val target = s.results.firstOrNull { it.id == resultId && it.assigned } ?: return
+        val source = target.source
+        val compiled = outcome.compiled.firstOrNull { it.source.path == source.path } ?: run {
+            appendLog("${source.displayPath}: コンパイル結果が見つからないため判定し直せません", LogLevel.Error)
+            return
+        }
+        _state.update { it.copy(assigningSource = source.displayPath) }
+        viewModelScope.launch {
+            try {
+                val tested = withContext(Dispatchers.Default) {
+                    pipeline.testSource(
+                        config = outcome.config,
+                        compiled = compiled,
+                        tasks = null,
+                        toolchain = JavaToolchain(s.setup.jdkBinDir.trim()),
+                        parallelism = if (s.setup.parallelTests) parallelism() else 1,
+                    )
+                }
+                _state.update { st ->
+                    val previous = st.results.filter { it.source == source }
+                    val (carried, _) = carryOverManualJudges(previous, tested)
+                    val results = st.results.replaceSourceResults(source, carried)
+                    st.copy(
+                        results = results,
+                        assignments = st.assignments - source.displayPath,
+                        assigningSource = null,
+                        selectedId = results.firstOrNull { it.source == source }?.id ?: st.selectedId,
+                    )
+                }
+                appendLog("${source.displayPath} の課題を自動で判定し直しました", LogLevel.Info)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                appendLog("${source.displayPath}: 判定し直せませんでした: ${e.message}", LogLevel.Error)
+                _state.update { it.copy(assigningSource = null) }
+            }
+        }
     }
 
     suspend fun readSource(result: TestResult): String = try {

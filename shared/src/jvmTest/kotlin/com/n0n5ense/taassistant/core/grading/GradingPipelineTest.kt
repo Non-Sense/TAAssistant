@@ -440,6 +440,35 @@ class GradingPipelineTest {
     }
 
     @Test
+    fun emptyAssignmentMeansNoTask() {
+        // 課題との紐づけをすべて外したソース (空の割り当て) は、ソースの内容に関わらず NF
+        val a = source("s1", "A.java")
+        val b = source("s1", "B.java")
+        val toolkit = FakeToolkit(listOf(student("s1")), mapOf(StudentId("s1") to listOf(a to "課題1 課題2", b to "課題1")))
+        val (outcome, recorder) = run(toolkit, request(assignments = mapOf(a.displayPath to emptyList())))
+        assertEquals(
+            listOf(Triple("A.java", Judge.NF, true), Triple("B.java", Judge.AC, false), Triple("B.java", Judge.WA, false)),
+            outcome.results.map { Triple(it.source.fileName, it.autoJudge, it.assigned) },
+        )
+        assertTrue(recorder.logs.none { it.message.contains("割り当てた課題") }, "空の割り当ては警告しない")
+    }
+
+    @Test
+    fun testSourceDetectsTasksWhenNull() {
+        val a = source("s1", "A.java")
+        val toolkit = FakeToolkit(listOf(student("s1")), mapOf(StudentId("s1") to listOf(a to "課題2")))
+        val pipeline = GradingPipeline(toolkit)
+        val config = ConfigParser.parse(yaml)
+        val compiled = CompiledSource(a, success("A.java"))
+        // null: ソースの内容から判定する (課題の判定を自動に戻したとき)
+        val detected = runBlocking { pipeline.testSource(config, compiled, null, JavaToolchain(), 2) }
+        assertEquals(listOf("課題2" to false), detected.map { it.taskName?.name to it.assigned })
+        // 空: どの課題でもない
+        val none = runBlocking { pipeline.testSource(config, compiled, emptyList(), JavaToolchain(), 2) }
+        assertEquals(listOf(Judge.NF to true), none.map { it.autoJudge to it.assigned })
+    }
+
+    @Test
     fun testSourceRunsAssignedTasks() {
         val a = source("s1", "A.java")
         val toolkit = FakeToolkit(listOf(student("s1")), mapOf(StudentId("s1") to listOf(a to "")))

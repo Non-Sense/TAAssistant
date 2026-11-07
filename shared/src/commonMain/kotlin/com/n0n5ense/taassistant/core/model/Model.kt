@@ -12,6 +12,7 @@ enum class Judge(val label: String, val description: String) {
     TLE("TLE", "実行時間制限超過"),
     RE("RE", "実行時エラー"),
     CE("CE", "コンパイルエラー"),
+    TCE("TCE", "テストコードのコンパイルエラー (メソッドが無い・引数の型が違う、またはテストコードの誤り)"),
     IE("IE", "システム内部エラー"),
     NF("NF", "提出なし / 課題を特定できない"),
     CF("CF", "複数の提出があり結果を特定できない"),
@@ -23,8 +24,8 @@ enum class Judge(val label: String, val description: String) {
         /** 手動判定で選択できる判定 */
         val manualChoices: List<Judge> = listOf(AC, WA, TLE, RE, CE)
 
-        /** 確認が必要そうな判定 */
-        val needsReview: Set<Judge> = setOf(WA, TLE, RE, IE, Unknown)
+        /** 確認が必要そうな判定 (TCE はテストコード側の誤りのこともある) */
+        val needsReview: Set<Judge> = setOf(WA, TLE, RE, TCE, IE, Unknown)
     }
 }
 
@@ -127,6 +128,10 @@ data class Execution(
     val exitCode: Int?,
     val timedOut: Boolean,
     val elapsedMillis: Double,
+    /** テストコードを使うテストで、実際にコンパイルしたテストコード (パッケージ宣言などを補ったもの) */
+    val testCode: String? = null,
+    /** テストコードのコンパイルエラー (メソッドが無い・引数の型が違うなど)。null ならコンパイルできた */
+    val testCodeError: String? = null,
 )
 
 /** 1ソースファイル × 1課題 × 1テストケース の結果 */
@@ -137,7 +142,7 @@ data class TestResult(
     val compile: CompileOutcome,
     /** null: 課題を特定できなかった */
     val taskName: TaskName?,
-    /** null: テストを実行していない (NF / CE / IE など) */
+    /** null: テストを実行していない (NF / CE / IE など)。TCE ではテストコードのテストケースが入る */
     val testCase: TestCase?,
     val autoJudge: Judge,
     val manualJudge: Judge? = null,

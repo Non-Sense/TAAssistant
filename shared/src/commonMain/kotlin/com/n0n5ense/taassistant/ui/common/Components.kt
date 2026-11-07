@@ -61,6 +61,7 @@ fun judgeColors(judge: Judge): Pair<Color, Color> = when (judge) {
     Judge.AC -> Color(0xFFC6EFCE) to Color(0xFF006100)
     Judge.WA, Judge.TLE -> Color(0xFFFFEB9C) to Color(0xFF9C5700)
     Judge.RE, Judge.CE -> Color(0xFFFFC7CE) to Color(0xFF9C0006)
+    Judge.TCE -> Color(0xFFFCE4D6) to Color(0xFF974706)
     Judge.IE -> Color(0xFFFFFFFF) to Color(0xFF000000)
     Judge.NF -> Color(0xFFBFBFBF) to Color(0xFF000000)
     Judge.CF -> Color(0xFFD9D2E9) to Color(0xFF3F3151)

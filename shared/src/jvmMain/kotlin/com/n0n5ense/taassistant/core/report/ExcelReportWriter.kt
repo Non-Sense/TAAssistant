@@ -141,6 +141,7 @@ private val judgeColors: Map<Judge, Pair<XSSFColor, XSSFColor>> by lazy {
         Judge.TLE to (rgb(255, 235, 156) to rgb(156, 87, 0)),
         Judge.RE to (rgb(255, 199, 206) to rgb(156, 0, 6)),
         Judge.CE to (rgb(255, 199, 206) to rgb(156, 0, 6)),
+        Judge.TCE to (rgb(252, 228, 214) to rgb(151, 71, 6)),
         Judge.IE to (rgb(255, 255, 255) to rgb(0, 0, 0)),
         Judge.NF to (rgb(191, 191, 191) to rgb(0, 0, 0)),
         Judge.CF to (rgb(217, 210, 233) to rgb(63, 49, 81)),

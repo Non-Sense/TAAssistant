@@ -1,5 +1,6 @@
 package com.n0n5ense.taassistant.ui.configeditor
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -22,6 +23,8 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -46,6 +49,7 @@ import androidx.compose.material3.NavigationDrawerItemDefaults
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
@@ -72,6 +76,7 @@ import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -775,14 +780,17 @@ private fun TaskEditor(
             task.testCases.forEachIndexed { caseIndex, testCase ->
                 val nameError = issue(DraftField.TestCaseName, testCase.key)
                 val expectError = issue(DraftField.Expect, testCase.key)
+                val testCodeError = issue(DraftField.TestCode, testCase.key)
+                val hasError = listOf(nameError, expectError, testCodeError).any { it != null }
                 TestCaseCard(
                     index = caseIndex,
                     count = task.testCases.size,
                     testCase = testCase,
                     nameError = nameError,
                     expectError = expectError,
+                    testCodeError = testCodeError,
                     // エラーのあるカードは閉じられないようにする (エラーが見えなくなるため)
-                    expanded = testCase.key !in collapsed || nameError != null || expectError != null,
+                    expanded = testCase.key !in collapsed || hasError,
                     onToggle = {
                         viewModel.setTestCasesCollapsed(
                             listOf(testCase.key),
@@ -817,6 +825,7 @@ private fun TestCaseCard(
     testCase: TestCaseDraft,
     nameError: String?,
     expectError: String?,
+    testCodeError: String?,
     expanded: Boolean,
     onToggle: () -> Unit,
     onChange: ((TestCaseDraft) -> TestCaseDraft) -> Unit,
@@ -824,7 +833,7 @@ private fun TestCaseCard(
     onDuplicate: () -> Unit,
     onRemove: () -> Unit,
 ) {
-    val hasError = nameError != null || expectError != null
+    val hasError = listOf(nameError, expectError, testCodeError).any { it != null }
     val sampleResult = if (testCase.sampleOutput.isNotEmpty()) testCase.sampleMatches() else null
 
     OutlinedCard(Modifier.fillMaxWidth()) {
@@ -913,6 +922,24 @@ private fun TestCaseCard(
                         )
                     },
                 )
+                TestMethodChooser(
+                    useTestCode = testCase.useTestCode,
+                    onSelect = { custom -> onChange { it.copy(useTestCode = custom) } },
+                )
+                if (testCase.useTestCode) {
+                    EditorField(
+                        label = "テストコード (Java)",
+                        value = testCase.testCode,
+                        onValueChange = { v -> onChange { it.copy(testCode = v) } },
+                        error = testCodeError,
+                        hint = "「public class 名前」を含めばクラス全体、含まなければ main の中身として扱います。" +
+                            "package を書かなければ提出されたクラスと同じパッケージに入れます。結果は標準出力に出し、想定出力で確かめます",
+                        placeholder = "Calculator c = new Calculator(10);\nSystem.out.println(c.add(1, 2));",
+                        monospaced = true,
+                        minLines = 6,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
                 FieldRow(
                     RowField(1f, null, "入力した通りに1行ずつ渡します") { m ->
                         EditorField(
@@ -961,8 +988,77 @@ private fun TestCaseCard(
     }
 }
 
+/** テストの方法 (提出された main を実行する / 自分で書いたテストコードを実行する) を、説明付きのカードで選ぶ */
+@Composable
+private fun TestMethodChooser(useTestCode: Boolean, onSelect: (Boolean) -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text(
+            "テストの方法",
+            style = MaterialTheme.typography.labelLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Row(
+            Modifier.fillMaxWidth().height(IntrinsicSize.Min).selectableGroup(),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            TestMethodOption(
+                selected = !useTestCode,
+                title = "提出された main を実行",
+                description = "引数と標準入力を渡して、提出されたプログラムの出力を確かめます",
+                onClick = { onSelect(false) },
+                modifier = Modifier.weight(1f).fillMaxHeight(),
+            )
+            TestMethodOption(
+                selected = useTestCode,
+                title = "テストコードを実行",
+                description = "自分で書いた Java のコードから提出されたクラスを呼び、その出力を確かめます",
+                onClick = { onSelect(true) },
+                modifier = Modifier.weight(1f).fillMaxHeight(),
+            )
+        }
+    }
+}
+
+@Composable
+private fun TestMethodOption(
+    selected: Boolean,
+    title: String,
+    description: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val colors = MaterialTheme.colorScheme
+    Surface(
+        modifier = modifier.selectable(selected = selected, role = Role.RadioButton, onClick = onClick),
+        shape = MaterialTheme.shapes.medium,
+        color = if (selected) colors.secondaryContainer else colors.surface,
+        border = BorderStroke(if (selected) 2.dp else 1.dp, if (selected) colors.primary else colors.outlineVariant),
+    ) {
+        Row(
+            Modifier.padding(start = 4.dp, end = 12.dp, top = 8.dp, bottom = 10.dp),
+            verticalAlignment = Alignment.Top,
+        ) {
+            // 行全体で選択するので、ラジオボタン自体はクリックを受けない
+            RadioButton(selected = selected, onClick = null, modifier = Modifier.padding(12.dp))
+            Column(Modifier.padding(top = 10.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(
+                    title,
+                    style = MaterialTheme.typography.titleSmall,
+                    color = if (selected) colors.onSecondaryContainer else colors.onSurface,
+                )
+                Text(
+                    description,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (selected) colors.onSecondaryContainer else colors.onSurfaceVariant,
+                )
+            }
+        }
+    }
+}
+
 /** 閉じたカードに表示する概要 */
 private fun testCaseSummary(testCase: TestCaseDraft): String = buildList {
+    if (testCase.useTestCode) add("テストコード ${testCase.testCode.lines().count { it.isNotBlank() }} 行")
     if (testCase.arg.isNotBlank()) add("引数: ${testCase.arg}")
     val inputLines = testCase.input.lines().count { it.isNotEmpty() }
     if (inputLines > 0) add("入力 $inputLines 行")

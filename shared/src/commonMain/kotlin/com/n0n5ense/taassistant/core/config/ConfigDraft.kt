@@ -36,11 +36,15 @@ data class TestCaseDraft(
     val expect: String = "",
     /** 正規表現を試すための出力例 (保存されない) */
     val sampleOutput: String = "",
+    /** true: 自分で書いたテストコードを実行する */
+    val useTestCode: Boolean = false,
+    /** テストコード (Java) */
+    val testCode: String = "",
 )
 
 enum class DraftField {
     CompileTimeout, RunningTimeout, OutputFileName, SubmissionDirPattern,
-    TaskName, Words, TestCaseName, Expect,
+    TaskName, Words, TestCaseName, Expect, TestCode,
 }
 
 data class DraftIssue(
@@ -70,6 +74,8 @@ fun Config.toDraft(newKey: () -> Long): ConfigDraft = ConfigDraft(
                     arg = tc.arg,
                     input = tc.input.joinToString("\n"),
                     expect = tc.expect.joinToString("\n"),
+                    useTestCode = tc.testCode != null,
+                    testCode = tc.testCode.orEmpty(),
                 )
             },
         )
@@ -92,6 +98,7 @@ fun ConfigDraft.toConfig(): Config = Config(
                     arg = tc.arg,
                     input = tc.input.inputLines(),
                     expect = tc.expect.nonBlankLines(),
+                    testCode = if (tc.useTestCode) tc.testCode.replace("\r", "").trimEnd() + "\n" else null,
                 )
             },
         )
@@ -181,6 +188,9 @@ fun ConfigDraft.validate(): List<DraftIssue> = buildList {
                 regexError(line)?.let {
                     add(DraftIssue(DraftField.Expect, "${i + 1}行目: $it", task.key, tc.key))
                 }
+            }
+            if (tc.useTestCode && tc.testCode.isBlank()) {
+                add(DraftIssue(DraftField.TestCode, "テストコードを入力してください", task.key, tc.key))
             }
         }
     }

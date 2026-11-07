@@ -140,21 +140,38 @@ fun List<TestResult>.replaceWithAssigned(
     return take(index) + renumbered + drop(index + 1)
 }
 
-/** [source] に課題を割り当てた結果を取り除き、NF の結果1つに戻す */
-fun List<TestResult>.removeAssigned(source: SourceFile): List<TestResult> {
-    val index = indexOfFirst { it.source == source && it.assigned }
+/** [source] の結果をすべて [replacement] に置き換える (最初の結果の位置に入れ、id は振り直す) */
+fun List<TestResult>.replaceSourceResults(source: SourceFile, replacement: List<TestResult>): List<TestResult> {
+    val index = indexOfFirst { it.source == source }
     if (index < 0) return this
-    val first = this[index]
+    var id = nextId()
+    val renumbered = replacement.map { it.copy(id = id++) }
+    val others = filterNot { it.source == source }
+    return others.take(index) + renumbered + others.drop(index)
+}
+
+/**
+ * [source] と課題 [task] の紐づけを外す (1つの課題に複数のソースが当たる CF の対策など)。
+ * 残った課題の結果は手動で決めたもの (assigned) とする。課題が残らなければ NF の結果1つにする
+ */
+fun List<TestResult>.unlinkTask(source: SourceFile, task: TaskName): List<TestResult> {
+    val ofSource = filter { it.source == source }
+    val first = ofSource.firstOrNull() ?: return this
+    val keepsOtherTask = ofSource.any { it.taskName != null && it.taskName != task }
+    if (keepsOtherTask) {
+        return filterNot { it.source == source && it.taskName == task }
+            .map { if (it.source == source) it.copy(assigned = true) else it }
+    }
     val notFound = TestResult(
-        id = nextId(),
+        id = 0,
         source = source,
         compile = first.compile,
         taskName = null,
         testCase = null,
         autoJudge = Judge.NF,
+        assigned = true,
     )
-    val rest = filterNot { it.source == source && it.assigned }
-    return rest.take(index) + notFound + rest.drop(index)
+    return replaceSourceResults(source, listOf(notFound))
 }
 
 /**

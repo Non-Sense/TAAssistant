@@ -734,7 +734,7 @@ private fun ResultDetail(
                 OutlinedButton(onClick = { onMove(1) }) { Text("次へ") }
             }
 
-            // ---- 課題の割り当て
+            // ---- 課題の割り当て・紐づけ
             if (result.taskName == null) {
                 AssignTaskCard(
                     result,
@@ -742,22 +742,14 @@ private fun ResultDetail(
                     assigning,
                     canAssign,
                     onAssign = { viewModel.assignTask(result.id, it) })
-            } else if (result.assigned) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Text(
-                        "課題「${result.taskName}」は手動で割り当てました",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    TextButton(
-                        onClick = { viewModel.unassignTask(result.id) },
-                        enabled = canAssign
-                    ) { Text("割り当てを解除") }
-                }
             }
+            TaskLinkRow(
+                result = result,
+                assigning = assigning,
+                enabled = canAssign,
+                onUnlink = { viewModel.unlinkTask(result.id) },
+                onRestore = { viewModel.restoreAutoTasks(result.id) },
+            )
 
             // ---- 判定
             Row(
@@ -844,11 +836,19 @@ private fun ResultDetail(
                 TextBlock("想定 (正規表現)", testCase.expect.joinToString("\n"))
             }
             if (execution != null) {
-                TextBlock("標準出力", execution.stdout.trimEnd())
-                if (execution.stderr.isNotBlank()) TextBlock(
-                    "標準エラー出力",
-                    execution.stderr.trimEnd()
-                )
+                val testCodeError = execution.testCodeError
+                if (testCodeError != null) {
+                    // メソッドが無い・引数の型が違うなど
+                    TextBlock("テストコードのコンパイルエラー", testCodeError.trimEnd())
+                } else {
+                    TextBlock("標準出力", execution.stdout.trimEnd())
+                    if (execution.stderr.isNotBlank()) TextBlock(
+                        "標準エラー出力",
+                        execution.stderr.trimEnd()
+                    )
+                }
+                // 実際にコンパイルしたもの (パッケージ宣言や main を補ったもの)
+                execution.testCode?.let { TextBlock("テストコード", it.trimEnd()) }
             }
             when (val compile = result.compile) {
                 is CompileOutcome.Failure -> TextBlock(
@@ -874,6 +874,46 @@ private fun ResultDetail(
             TextBlock(result.source.fileName, source ?: "読み込み中…")
         }
         AppVerticalScrollbar(scroll, Modifier.align(Alignment.CenterEnd).fillMaxHeight())
+    }
+}
+
+/**
+ * ソースと課題の紐づけの状態と操作。
+ * 「この課題から外す」で紐づけを外し (1つの課題に複数のソースが当たる CF の対策)、
+ * 手動で決めた課題は「課題の判定を自動に戻す」でソースの内容からの判定に戻す
+ */
+@Composable
+private fun TaskLinkRow(
+    result: TestResult,
+    assigning: Boolean,
+    enabled: Boolean,
+    onUnlink: () -> Unit,
+    onRestore: () -> Unit,
+) {
+    val task = result.taskName
+    val status = when {
+        assigning && task != null -> "判定し直しています…"
+        task != null && result.assigned -> "課題「$task」は手動で決めました"
+        task != null -> "課題「$task」はソースの内容から判定しました"
+        result.assigned -> "すべての課題から外しました"
+        else -> null
+    }
+    if (status == null) return
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Text(
+            status,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        if (task != null) {
+            TextButton(onClick = onUnlink, enabled = enabled) { Text("この課題から外す") }
+        }
+        if (result.assigned) {
+            TextButton(onClick = onRestore, enabled = enabled) { Text("課題の判定を自動に戻す") }
+        }
     }
 }
 

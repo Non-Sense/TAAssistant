@@ -4,14 +4,21 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material3.Button
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
@@ -36,6 +43,7 @@ internal fun SetupPanel(
     state: UiState,
     viewModel: AppViewModel,
     onEditConfig: () -> Unit,
+    onNewConfig: () -> Unit = {},
     configEditorDirty: Boolean = false,
     onOpenLog: () -> Unit = {},
     modifier: Modifier = Modifier,
@@ -67,11 +75,25 @@ internal fun SetupPanel(
                 onBrowse = viewModel::browseConfig,
                 enabled = editable,
             )
-            TextButton(onClick = onEditConfig, modifier = Modifier.padding(top = 0.dp)) {
-                Text(
-                    (if (setup.configPath.isBlank()) "コンフィグを新規作成…" else "コンフィグを編集…") +
-                            if (configEditorDirty) "  ● 未保存の変更あり" else "",
-                )
+            Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
+                // 編集中の (未保存の) コンフィグがあれば、パスが空でもエディタに戻れる
+                TextButton(onClick = onEditConfig, enabled = setup.configPath.isNotBlank() || configEditorDirty) {
+                    Icon(Icons.Filled.Edit, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("編集…")
+                }
+                TextButton(onClick = onNewConfig) {
+                    Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("新規作成…")
+                }
+                if (configEditorDirty) {
+                    Text(
+                        "● 未保存の変更あり",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                }
             }
 
             SectionLabel("実行ステップ")

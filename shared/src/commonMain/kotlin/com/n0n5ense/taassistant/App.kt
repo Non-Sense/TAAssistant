@@ -120,6 +120,11 @@ fun App(
                                 viewModel = appViewModel,
                                 configEditorDirty = editorState.isDirty,
                                 onEditConfig = { open(Screen.ConfigEditor) },
+                                // 新しいコンフィグでエディタを開く (未保存の変更があればエディタで確認する)
+                                onNewConfig = {
+                                    editorViewModel.requestNew()
+                                    open(Screen.ConfigEditor)
+                                },
                                 onOpenLog = { open(Screen.Log) },
                                 modifier = Modifier.width(380.dp).fillMaxHeight(),
                             )

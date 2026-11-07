@@ -146,7 +146,8 @@ class ProjectTest {
         assertEquals(listOf(false, true, true, false), assigned.map { it.assigned })
         assertTrue(assigned.none { it.judge == Judge.NF })
 
-        val restored = assigned.removeAssigned(other)
+        // 課題の判定を自動に戻す: ソースの結果をまとめて置き換える
+        val restored = assigned.replaceSourceResults(other, listOf(result(0, other, null, Judge.NF)))
         assertEquals(3, restored.size)
         val back = restored[1]
         assertEquals(Judge.NF, back.judge)
@@ -154,6 +155,39 @@ class ProjectTest {
         assertEquals(other, back.source)
         assertFalse(back.assigned)
         assertEquals(8, back.id)
+        assertEquals(assigned, assigned.replaceSourceResults(SourceFile(student.id, "/x", "x"), emptyList()))
+    }
+
+    @Test
+    fun unlinksSourceFromTask() {
+        // Both.java は課題1・課題2 の両方に当たっている (課題1 は Main.java と CF になる)
+        val both = SourceFile(student.id, "/w/s1/sources/Both.java", "s1/sources/Both.java")
+        val task2 = TaskName("課題2")
+        val results = listOf(
+            result(0, main, t1, Judge.AC),
+            result(1, both, t1, Judge.WA),
+            result(2, both, t2, Judge.WA),
+            result(3, both, t1, Judge.AC, manual = Judge.WA).copy(taskName = task2),
+            result(4, main, t2, Judge.AC),
+        )
+
+        // 課題1 から外す: 課題1 の結果だけ消え、残りは手動で決めたものになる (テストは実行し直さない)
+        val unlinked = results.unlinkTask(both, TaskName("課題1"))
+        assertEquals(listOf(0, 3, 4), unlinked.map { it.id })
+        assertEquals(listOf(false, true, false), unlinked.map { it.assigned })
+        assertEquals(Judge.WA, unlinked[1].manualJudge, "残った結果の手動判定はそのまま")
+
+        // 課題2 からも外すと、どの課題でもない NF になる (位置は元の場所)
+        val none = unlinked.unlinkTask(both, task2)
+        assertEquals(listOf(main, both, main), none.map { it.source })
+        val nf = none[1]
+        assertEquals(Judge.NF, nf.judge)
+        assertNull(nf.taskName)
+        assertTrue(nf.assigned)
+        assertEquals(5, nf.id)
+
+        // 他のソースの結果は変わらない / 無いソースなら何もしない
+        assertEquals(results, results.unlinkTask(SourceFile(student.id, "/x", "x"), TaskName("課題1")))
     }
 
     @Test

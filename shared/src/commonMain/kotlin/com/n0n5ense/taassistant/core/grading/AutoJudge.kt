@@ -13,6 +13,9 @@ object AutoJudge {
     )
 
     fun judge(testCase: TestCase, execution: Execution): Judge = when {
+        // メソッドが無い・引数の型が違うなど、提出されたクラスがテストコードの想定と合わない
+        // (提出されたソース自体のコンパイルエラー CE とは区別する)
+        execution.testCodeError != null -> Judge.TCE
         execution.timedOut -> Judge.TLE
         runtimeErrorMarkers.any(execution.stderr::contains) -> Judge.RE
         testCase.matches(execution.stdout) -> Judge.AC

@@ -278,14 +278,79 @@ class JvmGradingToolkit : GradingToolkit {
         toolchain: JavaToolchain,
         timeoutMillis: Long,
     ): Execution {
+        val testCode = testCase.testCode ?: return runJava(target.classPath, target.mainClass, testCase, toolchain, timeoutMillis)
+        return executeTestCode(target, testCase, testCode, toolchain, timeoutMillis)
+    }
+
+    /**
+     * テストコードを使うテスト。テストコードを一時ディレクトリに置き、提出されたクラスを classpath に入れて
+     * コンパイル・実行する (テストケースごとに別のディレクトリなので、並列に実行しても衝突しない)
+     */
+    private suspend fun executeTestCode(
+        target: CompileOutcome.Success,
+        testCase: TestCase,
+        testCode: String,
+        toolchain: JavaToolchain,
+        timeoutMillis: Long,
+    ): Execution = withContext(Dispatchers.IO) {
+        val prepared = TestCode.prepare(testCode, target.packageName)
+        val code = prepared.source
+        val dir = Files.createTempDirectory("taa-test-").toFile()
+        try {
+            val packageDir = prepared.packageName?.replace('.', '/').orEmpty()
+            val sourceFile = File(File(dir, "src/$packageDir").apply { mkdirs() }, prepared.fileName)
+            sourceFile.writeText(code, Charsets.UTF_8)
+            val classes = File(dir, "classes").apply { mkdirs() }
+            val javac = listOf(
+                toolchain.executable("javac"),
+                "-J-Duser.language=en",
+                "-J-Dstdout.encoding=UTF-8",
+                "-J-Dstderr.encoding=UTF-8",
+                "-encoding", "UTF-8",
+                "-d", classes.absolutePath,
+                "-cp", target.classPath,
+                sourceFile.absolutePath,
+            )
+            val compiled = runProcess(javac, null, TEST_CODE_COMPILE_TIMEOUT_MILLIS)
+            if (compiled.timedOut || compiled.exitCode != 0) {
+                // 一時ディレクトリのパスは表示しても意味がないので、ファイル名だけにする
+                val message = listOf(decodeText(compiled.stderr), decodeText(compiled.stdout))
+                    .filter(String::isNotBlank)
+                    .joinToString("\n")
+                    .replace(sourceFile.absolutePath, sourceFile.name)
+                return@withContext Execution(
+                    command = "javac ${sourceFile.name}",
+                    stdout = "",
+                    stderr = "",
+                    exitCode = compiled.exitCode,
+                    timedOut = false,
+                    elapsedMillis = 0.0,
+                    testCode = code,
+                    testCodeError = if (compiled.timedOut) "テストコードのコンパイルがタイムアウトしました" else message,
+                )
+            }
+            val classPath = classes.absolutePath + File.pathSeparator + target.classPath
+            runJava(classPath, prepared.mainClass, testCase, toolchain, timeoutMillis).copy(testCode = code)
+        } finally {
+            dir.deleteRecursively()
+        }
+    }
+
+    private suspend fun runJava(
+        classPath: String,
+        mainClass: String,
+        testCase: TestCase,
+        toolchain: JavaToolchain,
+        timeoutMillis: Long,
+    ): Execution {
         val command = listOf(
             toolchain.executable("java"),
             "-Duser.language=en",
             "-Dfile.encoding=UTF-8",
             "-Dstdout.encoding=UTF-8",
             "-Dstderr.encoding=UTF-8",
-            "-cp", target.classPath,
-            target.mainClass,
+            "-cp", classPath,
+            mainClass,
         ) + splitArguments(testCase.arg)
         val stdin = testCase.input.joinToString("") { "$it\n" }.toByteArray(Charsets.UTF_8)
         val output = runProcess(command, stdin, timeoutMillis)
@@ -355,6 +420,7 @@ class JvmGradingToolkit : GradingToolkit {
         const val LEGACY_DATABASE = "database.db"
         const val SOURCES_DIR = "sources"
         const val COMPILE_DIR = "compile"
+        const val TEST_CODE_COMPILE_TIMEOUT_MILLIS = 60_000L
     }
 }
 

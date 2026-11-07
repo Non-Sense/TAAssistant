@@ -104,7 +104,7 @@ class NavigationUiTest {
         }
 
         // 前回のプロジェクトが開き、採点画面になる
-        val editButton = hasText("コンフィグを編集…", substring = true)
+        val editButton = hasText("編集…").and(androidx.compose.ui.test.hasClickAction())
         waitUntil(timeoutMillis = 10_000) { exists(editButton) }
 
         // コンフィグエディタへ
@@ -132,6 +132,20 @@ class NavigationUiTest {
         ).performClick()
         onRoot().performKeyInput { pressKey(Key.Escape) }
         waitUntil(timeoutMillis = 10_000) { exists(editButton) && !exists(backButton) }
+
+        // 「新規作成…」: 新しいコンフィグでエディタを開く
+        val newButton = hasText("新規作成…").and(androidx.compose.ui.test.hasClickAction())
+        onNode(newButton).performClick()
+        waitUntil(timeoutMillis = 10_000) { exists(backButton) && exists(hasText("新しいコンフィグを作成しました")) }
+        assertFalse(exists(hasText("config.yaml")), "採点に使っているコンフィグではなく、新しいコンフィグを開く")
+        // 戻ると、未保存の変更があることが分かる
+        onNode(backButton).performClick()
+        waitUntil(timeoutMillis = 10_000) { exists(hasText("● 未保存の変更あり")) }
+        // 未保存の変更があるときにもう一度「新規作成…」を押すと、エディタで確認する
+        onNode(newButton).performClick()
+        waitUntil(timeoutMillis = 10_000) { exists(hasText("変更を保存しますか?")) }
+        onNode(hasText("キャンセル")).performClick()
+        waitUntil(timeoutMillis = 10_000) { !exists(hasText("変更を保存しますか?")) && exists(backButton) }
     }
 
     @Test
@@ -259,15 +273,20 @@ class NavigationUiTest {
         val menuItem = hasText("課題1").and(hasAnyAncestor(isPopup()))
         waitUntil(timeoutMillis = 10_000) { exists(menuItem) }
         onNode(menuItem).performClick()
-        waitUntil(timeoutMillis = 30_000) { exists(hasText("割り当てを解除")) }
+        val restore = hasText("課題の判定を自動に戻す")
+        waitUntil(timeoutMillis = 30_000) { exists(restore) && exists(hasText("課題「課題1」は手動で決めました")) }
         assertTrue(exists(hasText("(割り当て)")))
         assertFalse(exists(hasText("課題を特定できません")))
-        // 解除すると NF に戻る
-        onNode(hasText("割り当てを解除")).performClick()
+        // 「この課題から外す」: 課題が残らないので、どの課題でもない NF になる
+        onNode(hasText("この課題から外す")).performClick()
         waitUntil(timeoutMillis = 10_000) {
-            exists(hasText("課題を特定できません")) && !exists(
-                hasText("割り当てを解除")
-            )
+            exists(hasText("すべての課題から外しました")) && exists(hasText("課題を特定できません"))
+        }
+        assertTrue(exists(restore))
+        // 「課題の判定を自動に戻す」: ソースの内容から判定し直す (このソースは課題を特定できない)
+        onNode(restore).performClick()
+        waitUntil(timeoutMillis = 30_000) {
+            exists(hasText("課題を特定できません")) && !exists(restore) && !exists(hasText("すべての課題から外しました"))
         }
 
         // 「提出ファイル」タブ

@@ -28,18 +28,19 @@ class GradingPipeline(private val toolkit: GradingToolkit) {
         Session(request, onEvent).run()
 
     /**
-     * 1つのソースを、指定した課題としてテストする (NF のソースに課題を手動で割り当てたとき)。
+     * 1つのソースをテストする (課題を手動で割り当てたとき・課題の判定を自動に戻したとき)。
+     * [tasks] が null ならソースの内容から課題を判定する。空ならどの課題でもない (NF)。
      * コンフィグにない課題は無視し、1つも残らなければソースの内容から判定する。
      * 結果の id は 0 なので、呼び出し側で振り直す。
      */
     suspend fun testSource(
         config: Config,
         compiled: CompiledSource,
-        tasks: List<TaskName>,
+        tasks: List<TaskName>?,
         toolchain: JavaToolchain,
         parallelism: Int,
     ): List<TestResult> =
-        planTests(config, compiled, tasks.validIn(config))
+        planTests(config, compiled, tasks?.validIn(config))
             .mapConcurrently(parallelism, onProgress = {}) { runTest(it, toolchain, config.runningTimeout) }
 
     /** 1回の採点。段階ごとの処理と、ログ・進み具合の通知を持つ */
@@ -208,9 +209,12 @@ private fun planFor(config: Config, compiled: CompiledSource, tasks: List<TaskNa
     }
 }
 
-/** コンフィグにある課題だけを残す。1つも残らなければ null (自動の判定に戻す) */
+/**
+ * コンフィグにある課題だけを残す。1つも残らなければ null (自動の判定に戻す)。
+ * もともと空なら空のまま (課題との紐づけをすべて手動で外した = どの課題でもない)
+ */
 private fun List<TaskName>.validIn(config: Config): List<TaskName>? =
-    filter { it in config.tasks }.takeIf { it.isNotEmpty() }
+    if (isEmpty()) this else filter { it in config.tasks }.takeIf { it.isNotEmpty() }
 
 private suspend fun <T, R> List<T>.mapConcurrently(
     parallelism: Int,
