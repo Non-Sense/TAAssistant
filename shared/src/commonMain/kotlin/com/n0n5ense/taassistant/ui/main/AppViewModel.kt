@@ -59,7 +59,9 @@ data class ExportStatus(val message: String, val paths: List<String>, val isErro
 
 /** 開いているプロジェクト */
 data class OpenProject(val path: String) {
-    val name: String get() = path.substringAfterLast('/').substringAfterLast('\\').removeSuffix(".${ProjectCodec.EXTENSION}")
+    val name: String
+        get() = path.substringAfterLast('/').substringAfterLast('\\')
+            .removeSuffix(".${ProjectCodec.EXTENSION}")
 }
 
 /** プロジェクトの操作の結果 (複製したときなど)。[openPath] があれば「開く」を出す */
@@ -112,7 +114,8 @@ private data class SaveSnapshot(
 )
 
 private fun UiState.saveSnapshot(): SaveSnapshot? =
-    project?.takeUnless { isRunning || loadingProject }?.let { SaveSnapshot(it.path, setup, assignments, outcome, results) }
+    project?.takeUnless { isRunning || loadingProject }
+        ?.let { SaveSnapshot(it.path, setup, assignments, outcome, results) }
 
 @OptIn(FlowPreview::class)
 class AppViewModel(
@@ -135,7 +138,8 @@ class AppViewModel(
                 .collect { snapshot -> if (snapshot != null) save(snapshot) }
         }
         // 前回開いていたプロジェクトを開く
-        services.settings.get(KEY_LAST_PROJECT)?.takeIf { it.isNotBlank() && services.fileExists(it) }?.let { path ->
+        services.settings.get(KEY_LAST_PROJECT)
+            ?.takeIf { it.isNotBlank() && services.fileExists(it) }?.let { path ->
             viewModelScope.launch { load(path) }
         }
     }
@@ -145,8 +149,13 @@ class AppViewModel(
     fun newProject() {
         if (state.value.isRunning) return
         val initial = state.value.project?.path?.let(services::parentDirectory)
-        val path = services.pickSaveFile("新しいプロジェクトの保存先", initial, listOf(ProjectCodec.EXTENSION)) ?: return
         viewModelScope.launch {
+            val path = services.pickSaveFile(
+                "新しいプロジェクトの保存先",
+                initial,
+                listOf(ProjectCodec.EXTENSION),
+                suggestedName = "新しいプロジェクト",
+            ) ?: return@launch
             flushSave()
             // 実行オプションと JDK は前回の設定を引き継ぎ、ディレクトリとコンフィグは空にする。
             // プロジェクト導入前のパスが残っていれば、最初のプロジェクトにだけ引き継ぐ
@@ -166,12 +175,12 @@ class AppViewModel(
 
     fun openProject(path: String? = null) {
         if (state.value.isRunning) return
-        val target = path ?: services.pickFile(
-            "プロジェクトを開く",
-            state.value.project?.path ?: state.value.recentProjects.firstOrNull(),
-            listOf(ProjectCodec.EXTENSION),
-        ) ?: return
         viewModelScope.launch {
+            val target = path ?: services.pickFile(
+                "プロジェクトを開く",
+                state.value.project?.path ?: state.value.recentProjects.firstOrNull(),
+                listOf(ProjectCodec.EXTENSION),
+            ) ?: return@launch
             flushSave()
             load(target)
         }
@@ -193,8 +202,8 @@ class AppViewModel(
 
     /** 今の内容を別のファイルに保存し、以後はそのファイルを開いている状態にする (元のファイルは最後に保存した状態で残る) */
     fun saveProjectAs() {
-        val path = pickProjectCopyPath("別名で保存") ?: return
         viewModelScope.launch {
+            val path = pickProjectCopyPath("別名で保存", suggestedName = null) ?: return@launch
             // 自動保存と同じく、元のファイルにも今の内容を書いておく
             flushSave()
             val snapshot = state.value.saveSnapshot()?.copy(path = path) ?: return@launch
@@ -225,14 +234,25 @@ class AppViewModel(
      * [includeResults] が false なら設定だけを複製する (次の回の課題を同じ設定で始めるときなど)。
      */
     fun duplicateProject(includeResults: Boolean) {
-        val path = pickProjectCopyPath(if (includeResults) "プロジェクトを複製" else "設定だけを複製") ?: return
         viewModelScope.launch {
+            val current = state.value.project?.name.orEmpty()
+            val path = pickProjectCopyPath(
+                if (includeResults) "プロジェクトを複製" else "設定だけを複製",
+                suggestedName = if (includeResults) "$current (コピー)" else "$current (設定)",
+            ) ?: return@launch
             val snapshot = state.value.saveSnapshot()?.copy(path = path) ?: return@launch
             try {
                 services.toolkit.writeBinaryFile(path, encodeProject(snapshot, includeResults))
                 addRecentProject(path)
                 val what = if (includeResults) "複製しました" else "設定だけを複製しました"
-                _state.update { it.copy(projectNotice = ProjectNotice("$what: $path", openPath = path)) }
+                _state.update {
+                    it.copy(
+                        projectNotice = ProjectNotice(
+                            "$what: $path",
+                            openPath = path
+                        )
+                    )
+                }
                 appendLog("プロジェクトを$what: $path", LogLevel.Info)
             } catch (e: CancellationException) {
                 throw e
@@ -248,10 +268,15 @@ class AppViewModel(
     }
 
     /** 別名で保存・複製の保存先を選ぶ。今のファイルと同じなら null */
-    private fun pickProjectCopyPath(title: String): String? {
+    private suspend fun pickProjectCopyPath(title: String, suggestedName: String?): String? {
         val current = state.value.project ?: return null
         if (state.value.isRunning) return null
-        val path = services.pickSaveFile(title, services.parentDirectory(current.path), listOf(ProjectCodec.EXTENSION)) ?: return null
+        val path = services.pickSaveFile(
+            title,
+            current.path,
+            listOf(ProjectCodec.EXTENSION),
+            suggestedName
+        ) ?: return null
         if (path == current.path) {
             _state.update { it.copy(projectError = "今開いているプロジェクトと同じファイルです") }
             return null
@@ -283,7 +308,8 @@ class AppViewModel(
                 results = results,
                 assignments = file.assignments.associate { it.source to it.tasks },
                 selectedId = results.firstOrNull()?.id,
-                resultView = ResultViewState(collapsed = outcome?.students.orEmpty().map { it.id }.toSet()),
+                resultView = ResultViewState(collapsed = outcome?.students.orEmpty().map { it.id }
+                    .toSet()),
             )
             // 開いただけでは保存し直さない
             lastSaved = loaded.saveSnapshot()
@@ -292,7 +318,12 @@ class AppViewModel(
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            _state.update { it.copy(loadingProject = false, projectError = "プロジェクトを開けませんでした: ${e.message}") }
+            _state.update {
+                it.copy(
+                    loadingProject = false,
+                    projectError = "プロジェクトを開けませんでした: ${e.message}"
+                )
+            }
         }
     }
 
@@ -305,7 +336,10 @@ class AppViewModel(
      * [snapshot] をプロジェクトファイルの中身にする。パスは [snapshot] の保存先を基準にした相対パスにする。
      * [includeResults] が false なら、設定だけにする (課題の割り当てと結果を含めない)。
      */
-    private suspend fun encodeProject(snapshot: SaveSnapshot, includeResults: Boolean = true): ByteArray =
+    private suspend fun encodeProject(
+        snapshot: SaveSnapshot,
+        includeResults: Boolean = true
+    ): ByteArray =
         withContext(Dispatchers.Default) {
             val settings = snapshot.settings.let { s ->
                 s.copy(
@@ -317,7 +351,12 @@ class AppViewModel(
             ProjectCodec.encode(
                 ProjectFile(
                     settings = settings,
-                    assignments = if (includeResults) snapshot.assignments.map { (source, tasks) -> TaskAssignment(source, tasks) } else emptyList(),
+                    assignments = if (includeResults) snapshot.assignments.map { (source, tasks) ->
+                        TaskAssignment(
+                            source,
+                            tasks
+                        )
+                    } else emptyList(),
                     outcome = if (includeResults) snapshot.outcome?.copy(results = snapshot.results) else null,
                 ),
             )
@@ -346,7 +385,9 @@ class AppViewModel(
 
     /** 最近のプロジェクトの先頭に追加する */
     private fun addRecentProject(path: String) {
-        val recent = (listOf(path) + state.value.recentProjects.filter { it != path }).take(MAX_RECENT_PROJECTS)
+        val recent = (listOf(path) + state.value.recentProjects.filter { it != path }).take(
+            MAX_RECENT_PROJECTS
+        )
         services.settings.put(KEY_RECENT_PROJECTS, recent.joinToString("\n"))
         _state.update { it.copy(recentProjects = recent) }
     }
@@ -363,31 +404,49 @@ class AppViewModel(
 
     fun browseRootDir() {
         val current = state.value.setup
-        services.pickDirectory("提出物ディレクトリを選択", current.rootDir.ifBlank { projectDir() })?.let { path ->
-            updateSetup {
-                it.copy(rootDir = path, outputDir = it.outputDir.ifBlank { services.parentDirectory(path).orEmpty() })
+        viewModelScope.launch {
+            services.pickDirectory(
+                "提出物ディレクトリを選択",
+                current.rootDir.ifBlank { projectDir() })?.let { path ->
+                updateSetup {
+                    it.copy(
+                        rootDir = path,
+                        outputDir = it.outputDir.ifBlank {
+                            services.parentDirectory(path).orEmpty()
+                        })
+                }
             }
         }
     }
 
     fun browseConfig() {
         val current = state.value.setup
-        services.pickFile(
-            "コンフィグファイルを選択",
-            current.configPath.ifBlank { current.rootDir.ifBlank { projectDir() } },
-            listOf("yaml", "yml"),
-        )?.let { path -> updateSetup { it.copy(configPath = path) } }
+        viewModelScope.launch {
+            services.pickFile(
+                "コンフィグファイルを選択",
+                current.configPath.ifBlank { current.rootDir.ifBlank { projectDir() } },
+                listOf("yaml", "yml"),
+            )?.let { path -> updateSetup { it.copy(configPath = path) } }
+        }
     }
 
     fun browseOutputDir() {
         val current = state.value.setup
-        services.pickDirectory("出力先ディレクトリを選択", current.outputDir.ifBlank { current.rootDir.ifBlank { projectDir() } })
-            ?.let { path -> updateSetup { it.copy(outputDir = path) } }
+        viewModelScope.launch {
+            services.pickDirectory(
+                "出力先ディレクトリを選択",
+                current.outputDir.ifBlank { current.rootDir.ifBlank { projectDir() } })
+                ?.let { path -> updateSetup { it.copy(outputDir = path) } }
+        }
     }
 
     fun browseJdkBinDir() {
-        services.pickDirectory("JDK の bin ディレクトリを選択", state.value.setup.jdkBinDir.ifBlank { null })
-            ?.let { path -> updateSetup { it.copy(jdkBinDir = path) } }
+        viewModelScope.launch {
+            services.pickDirectory(
+                "JDK の bin ディレクトリを選択",
+                state.value.setup.jdkBinDir.ifBlank { null })
+                ?.let { path -> updateSetup { it.copy(jdkBinDir = path) } }
+        }
     }
 
     private fun projectDir(): String? = state.value.project?.path?.let(services::parentDirectory)
@@ -432,13 +491,22 @@ class AppViewModel(
 
         // 中止・失敗したときは前回の結果に戻す (プロジェクトに保存した結果を消さない)
         fun restorePrevious(status: RunStatus) = _state.update {
-            it.copy(status = status, outcome = before.outcome, results = before.results, selectedId = before.selectedId)
+            it.copy(
+                status = status,
+                outcome = before.outcome,
+                results = before.results,
+                selectedId = before.selectedId
+            )
         }
         runJob = viewModelScope.launch {
             try {
-                val outcome = withContext(Dispatchers.Default) { pipeline.run(request, ::onPipelineEvent) }
+                val outcome =
+                    withContext(Dispatchers.Default) { pipeline.run(request, ::onPipelineEvent) }
                 val (results, carried) = carryOverManualJudges(before.results, outcome.results)
-                if (carried > 0) appendLog("前回の手動判定を $carried 件引き継ぎました", LogLevel.Info)
+                if (carried > 0) appendLog(
+                    "前回の手動判定を $carried 件引き継ぎました",
+                    LogLevel.Info
+                )
                 _state.update {
                     it.copy(
                         status = RunStatus.Finished,
@@ -473,14 +541,28 @@ class AppViewModel(
     private fun onPipelineEvent(event: PipelineEvent) {
         when (event) {
             is PipelineEvent.Progress -> _state.update {
-                if (it.status is RunStatus.Running) it.copy(status = RunStatus.Running(event.stage, event.completed, event.total)) else it
+                if (it.status is RunStatus.Running) it.copy(
+                    status = RunStatus.Running(
+                        event.stage,
+                        event.completed,
+                        event.total
+                    )
+                ) else it
             }
+
             is PipelineEvent.Log -> appendLog(event.message, event.level)
         }
     }
 
     private fun appendLog(message: String, level: LogLevel) {
-        _state.update { it.copy(logs = (it.logs + LogLine(message, level)).takeLast(MAX_LOG_LINES)) }
+        _state.update {
+            it.copy(
+                logs = (it.logs + LogLine(
+                    message,
+                    level
+                )).takeLast(MAX_LOG_LINES)
+            )
+        }
     }
 
     // ------------------------------------------------------------ review
@@ -509,10 +591,14 @@ class AppViewModel(
         if (s.isRunning || s.assigningSource != null) return
         val outcome = s.outcome ?: return
         val notFound = s.results.firstOrNull { it.id == resultId && it.taskName == null } ?: return
-        val compiled = outcome.compiled.firstOrNull { it.source.path == notFound.source.path } ?: run {
-            appendLog("${notFound.source.displayPath}: コンパイル結果が見つからないため割り当てできません", LogLevel.Error)
-            return
-        }
+        val compiled =
+            outcome.compiled.firstOrNull { it.source.path == notFound.source.path } ?: run {
+                appendLog(
+                    "${notFound.source.displayPath}: コンパイル結果が見つからないため割り当てできません",
+                    LogLevel.Error
+                )
+                return
+            }
         val sourcePath = notFound.source.displayPath
         _state.update { it.copy(assigningSource = sourcePath) }
         viewModelScope.launch {
@@ -528,7 +614,8 @@ class AppViewModel(
                 }
                 _state.update { st ->
                     val results = st.results.replaceWithAssigned(notFound, tested)
-                    val firstNew = results.firstOrNull { it.source == notFound.source && it.assigned }?.id
+                    val firstNew =
+                        results.firstOrNull { it.source == notFound.source && it.assigned }?.id
                     st.copy(
                         results = results,
                         assignments = st.assignments + (sourcePath to listOf(task)),
@@ -540,7 +627,10 @@ class AppViewModel(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                appendLog("$sourcePath: 割り当てた課題のテストに失敗しました: ${e.message}", LogLevel.Error)
+                appendLog(
+                    "$sourcePath: 割り当てた課題のテストに失敗しました: ${e.message}",
+                    LogLevel.Error
+                )
                 _state.update { it.copy(assigningSource = null) }
             }
         }
@@ -578,12 +668,18 @@ class AppViewModel(
         val snapshot = state.value
         val outcome = snapshot.outcome ?: return
         val setup = snapshot.setup
-        val outputDir = setup.outputDir.ifBlank { services.parentDirectory(setup.rootDir) ?: setup.rootDir }
+        val outputDir =
+            setup.outputDir.ifBlank { services.parentDirectory(setup.rootDir) ?: setup.rootDir }
         viewModelScope.launch {
             val status = try {
                 val paths = withContext(Dispatchers.Default) {
                     val report = buildReport(outcome.config, outcome.students, state.value.results)
-                    services.toolkit.writeReport(outputDir, outcome.config.outputFileName, setup.reportFormat, report)
+                    services.toolkit.writeReport(
+                        outputDir,
+                        outcome.config.outputFileName,
+                        setup.reportFormat,
+                        report
+                    )
                 }
                 paths.forEach { appendLog("出力しました: $it", LogLevel.Info) }
                 ExportStatus("結果ファイルを出力しました", paths, isError = false)
@@ -604,11 +700,14 @@ class AppViewModel(
         val s = services.settings
         val default = SetupState()
         return SetupState(
-            lastStep = s.get(KEY_LAST_STEP)?.let { v -> LastStep.entries.firstOrNull { it.name == v } } ?: default.lastStep,
+            lastStep = s.get(KEY_LAST_STEP)
+                ?.let { v -> LastStep.entries.firstOrNull { it.name == v } } ?: default.lastStep,
             parallelTests = s.get(KEY_PARALLEL)?.toBooleanStrictOrNull() ?: default.parallelTests,
             cleanWorkspace = s.get(KEY_CLEAN)?.toBooleanStrictOrNull() ?: default.cleanWorkspace,
             autoExport = s.get(KEY_AUTO_EXPORT)?.toBooleanStrictOrNull() ?: default.autoExport,
-            reportFormat = s.get(KEY_FORMAT)?.let { v -> ReportFormat.entries.firstOrNull { it.name == v } } ?: default.reportFormat,
+            reportFormat = s.get(KEY_FORMAT)
+                ?.let { v -> ReportFormat.entries.firstOrNull { it.name == v } }
+                ?: default.reportFormat,
             jdkBinDir = s.get(KEY_JDK).orEmpty(),
         )
     }

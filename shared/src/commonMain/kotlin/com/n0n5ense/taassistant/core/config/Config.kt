@@ -3,9 +3,7 @@ package com.n0n5ense.taassistant.core.config
 import com.charleskorn.kaml.SingleLineStringStyle
 import com.charleskorn.kaml.Yaml
 import com.charleskorn.kaml.YamlConfiguration
-import kotlin.jvm.JvmInline
 import kotlinx.serialization.EncodeDefault
-import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.Transient
 
@@ -45,7 +43,8 @@ data class Config(
         const val CURRENT_VERSION = 2
 
         /** `<学籍番号> <名前>_<数字>_assignsubmission_file_` (Moodle の既定) */
-        const val DEFAULT_SUBMISSION_DIR_PATTERN = """^(?<id>\S+)\s+(?<name>[^_]*)_.*assignsubmission_file_?$"""
+        const val DEFAULT_SUBMISSION_DIR_PATTERN =
+            """^(?<id>\S+)\s+(?<name>[^_]*)_.*assignsubmission_file_?$"""
     }
 }
 
@@ -61,6 +60,7 @@ fun Config.parseSubmissionDirName(dirName: String): SubmissionDirName? {
         } else {
             match.groupValues.getOrNull(index)
         }
+
     val id = group("id", 1)?.trim().orEmpty()
     if (id.isEmpty()) return null
     return SubmissionDirName(id, group("name", 2)?.trim().orEmpty())
@@ -122,7 +122,7 @@ object ConfigParser {
             version < Config.CURRENT_VERSION -> throw LegacyConfigException(version)
             version > Config.CURRENT_VERSION -> throw IllegalArgumentException(
                 "このコンフィグ (version: $version) はより新しいバージョンのアプリ用です。" +
-                    "このアプリが対応しているのは version: ${Config.CURRENT_VERSION} までです。",
+                        "このアプリが対応しているのは version: ${Config.CURRENT_VERSION} までです。",
             )
         }
         return Yaml.default.decodeFromString(Config.serializer(), text)

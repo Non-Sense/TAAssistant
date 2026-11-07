@@ -7,4 +7,5 @@ internal expect fun gzip(bytes: ByteArray): ByteArray
 internal expect fun gunzip(bytes: ByteArray): ByteArray
 
 /** 先頭が gzip のマジックナンバー (1f 8b) か */
-internal fun ByteArray.isGzip(): Boolean = size >= 2 && this[0] == 0x1f.toByte() && this[1] == 0x8b.toByte()
+internal fun ByteArray.isGzip(): Boolean =
+    size >= 2 && this[0] == 0x1f.toByte() && this[1] == 0x8b.toByte()

@@ -55,14 +55,21 @@ class StudentViewModel(
                 val files = services.toolkit.listSubmissionFiles(student)
                 _state.update { s ->
                     // 最初は展開したソースの先頭を表示する
-                    val selected = s.selectedFile ?: files.extracted.firstOrNull { it.extension == "java" } ?: files.extracted.firstOrNull()
+                    val selected =
+                        s.selectedFile ?: files.extracted.firstOrNull { it.extension == "java" }
+                        ?: files.extracted.firstOrNull()
                     s.copy(loading = false, files = files, selectedFile = selected)
                 }
                 state.value.selectedFile?.let(::selectFile)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                _state.update { it.copy(loading = false, error = "ファイルの一覧を取得できませんでした: ${e.message}") }
+                _state.update {
+                    it.copy(
+                        loading = false,
+                        error = "ファイルの一覧を取得できませんでした: ${e.message}"
+                    )
+                }
             }
         }
     }
@@ -86,11 +93,21 @@ class StudentViewModel(
         }
         val reason = when {
             file.extension in BINARY_EXTENSIONS -> "このファイルはプレビューできません (.${file.extension})"
-            file.size > MAX_PREVIEW_BYTES -> "ファイルが大きいためプレビューできません (${formatSize(file.size)})"
+            file.size > MAX_PREVIEW_BYTES -> "ファイルが大きいためプレビューできません (${
+                formatSize(
+                    file.size
+                )
+            })"
+
             else -> null
         }
         if (reason != null) {
-            _state.update { it.copy(selectedFile = file, preview = FilePreview.Unavailable(reason)) }
+            _state.update {
+                it.copy(
+                    selectedFile = file,
+                    preview = FilePreview.Unavailable(reason)
+                )
+            }
             return
         }
         _state.update { it.copy(selectedFile = file, preview = FilePreview.Loading) }

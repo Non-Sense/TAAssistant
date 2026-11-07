@@ -7,7 +7,6 @@ import com.n0n5ense.taassistant.core.model.Execution
 import com.n0n5ense.taassistant.core.model.SourceEncoding
 import com.n0n5ense.taassistant.core.model.SourceFile
 import com.n0n5ense.taassistant.core.model.Student
-import com.n0n5ense.taassistant.core.model.encoding
 import com.n0n5ense.taassistant.core.report.Report
 import com.n0n5ense.taassistant.core.report.ReportFormat
 
@@ -78,7 +77,12 @@ interface GradingToolkit {
     suspend fun listArchive(path: String, format: ArchiveFormat): ArchiveListing
 
     /** UTF-8 → Shift_JIS の順に試してコンパイルする */
-    suspend fun compile(source: SourceFile, student: Student, toolchain: JavaToolchain, timeoutMillis: Long): CompileOutcome
+    suspend fun compile(
+        source: SourceFile,
+        student: Student,
+        toolchain: JavaToolchain,
+        timeoutMillis: Long
+    ): CompileOutcome
 
     suspend fun readSource(source: SourceFile, encoding: SourceEncoding): String
 
@@ -90,5 +94,10 @@ interface GradingToolkit {
     ): Execution
 
     /** 結果ファイルを書き出し、書き出したファイルのパスを返す */
-    suspend fun writeReport(outputDir: String, baseName: String, format: ReportFormat, report: Report): List<String>
+    suspend fun writeReport(
+        outputDir: String,
+        baseName: String,
+        format: ReportFormat,
+        report: Report
+    ): List<String>
 }

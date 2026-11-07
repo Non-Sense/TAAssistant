@@ -1,15 +1,14 @@
 package com.n0n5ense.taassistant.core.grading
 
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.runInterruptible
 import java.io.ByteArrayOutputStream
 import java.io.InputStream
 import java.nio.ByteBuffer
-import java.nio.charset.CharacterCodingException
 import java.nio.charset.Charset
 import java.nio.charset.CodingErrorAction
 import java.util.concurrent.TimeUnit
 import kotlin.concurrent.thread
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.runInterruptible
 
 internal class ProcessOutput(
     val exitCode: Int?,
@@ -28,7 +27,11 @@ private const val MAX_CAPTURE_BYTES = 4 * 1024 * 1024
  * - timeoutMillis < 0 なら無制限
  * - コルーチンがキャンセルされたらプロセスを強制終了する
  */
-internal suspend fun runProcess(command: List<String>, stdin: ByteArray?, timeoutMillis: Long): ProcessOutput =
+internal suspend fun runProcess(
+    command: List<String>,
+    stdin: ByteArray?,
+    timeoutMillis: Long
+): ProcessOutput =
     runInterruptible(Dispatchers.IO) {
         val process = ProcessBuilder(command).start()
         val startedAt = System.nanoTime()

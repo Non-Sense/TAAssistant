@@ -28,17 +28,29 @@ private fun scrollbarStyle(): ScrollbarStyle {
 
 @Composable
 internal actual fun AppVerticalScrollbar(state: ScrollState, modifier: Modifier) {
-    VerticalScrollbar(rememberScrollbarAdapter(state), modifier.padding2(), style = scrollbarStyle())
+    VerticalScrollbar(
+        rememberScrollbarAdapter(state),
+        modifier.padding2(),
+        style = scrollbarStyle()
+    )
 }
 
 @Composable
 internal actual fun AppVerticalScrollbar(state: LazyListState, modifier: Modifier) {
-    VerticalScrollbar(rememberScrollbarAdapter(state), modifier.padding2(), style = scrollbarStyle())
+    VerticalScrollbar(
+        rememberScrollbarAdapter(state),
+        modifier.padding2(),
+        style = scrollbarStyle()
+    )
 }
 
 @Composable
 internal actual fun AppHorizontalScrollbar(state: ScrollState, modifier: Modifier) {
-    HorizontalScrollbar(rememberScrollbarAdapter(state), modifier.padding2(), style = scrollbarStyle())
+    HorizontalScrollbar(
+        rememberScrollbarAdapter(state),
+        modifier.padding2(),
+        style = scrollbarStyle()
+    )
 }
 
 /** 端に少し余白をあける */

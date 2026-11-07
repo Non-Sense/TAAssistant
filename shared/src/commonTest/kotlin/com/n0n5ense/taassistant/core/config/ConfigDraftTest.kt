@@ -46,7 +46,10 @@ class ConfigDraftTest {
         assertFalse("excludeWord" in written.substringAfter("課題2"), written)
         // 基本設定は既定値でも必ず書き出す
         val defaults = ConfigParser.encode(Config(tasks = emptyMap()))
-        assertTrue(defaults.startsWith("version: 2\ncompileTimeout: 3000\nrunningTimeout: 5000\noutputFileName: 'output'"), defaults)
+        assertTrue(
+            defaults.startsWith("version: 2\ncompileTimeout: 3000\nrunningTimeout: 5000\noutputFileName: 'output'"),
+            defaults
+        )
     }
 
     @Test
@@ -56,10 +59,12 @@ class ConfigDraftTest {
             outputFileName = "a/b",
             submissionDirPattern = "(",
             tasks = listOf(
-                TaskDraft(1, name = "A", words = "\n  \n", testCases = listOf(
-                    TestCaseDraft(10, name = "t", expect = "ok\n[unclosed"),
-                    TestCaseDraft(11, name = "t"),
-                )),
+                TaskDraft(
+                    1, name = "A", words = "\n  \n", testCases = listOf(
+                        TestCaseDraft(10, name = "t", expect = "ok\n[unclosed"),
+                        TestCaseDraft(11, name = "t"),
+                    )
+                ),
                 TaskDraft(2, name = "A", words = "x"),
                 TaskDraft(3, name = " ", words = "x"),
             ),
@@ -73,7 +78,12 @@ class ConfigDraftTest {
         assertTrue(has(DraftField.OutputFileName))
         assertTrue(has(DraftField.SubmissionDirPattern))
         assertTrue(has(DraftField.Words, 1))
-        assertTrue(has(DraftField.TaskName, 1) && has(DraftField.TaskName, 2) && has(DraftField.TaskName, 3))
+        assertTrue(
+            has(DraftField.TaskName, 1) && has(
+                DraftField.TaskName,
+                2
+            ) && has(DraftField.TaskName, 3)
+        )
         assertTrue(has(DraftField.TestCaseName, 1, 10) && has(DraftField.TestCaseName, 1, 11))
         assertTrue(issues.single { it.field == DraftField.Expect }.message.startsWith("2行目"))
     }

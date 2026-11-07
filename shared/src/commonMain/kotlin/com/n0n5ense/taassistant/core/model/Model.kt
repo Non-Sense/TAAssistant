@@ -2,7 +2,6 @@ package com.n0n5ense.taassistant.core.model
 
 import com.n0n5ense.taassistant.core.config.TaskName
 import com.n0n5ense.taassistant.core.config.TestCase
-import kotlin.jvm.JvmInline
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 

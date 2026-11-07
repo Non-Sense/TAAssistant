@@ -47,7 +47,14 @@ class ConfigMigrationTest {
         val unversioned = v2.lines().drop(1).joinToString("\n")
         assertFailsWith<LegacyConfigException> { ConfigParser.parse(unversioned) }
 
-        val newer = assertFailsWith<IllegalArgumentException> { ConfigParser.parse(v2.replace("version: 2", "version: 99")) }
+        val newer = assertFailsWith<IllegalArgumentException> {
+            ConfigParser.parse(
+                v2.replace(
+                    "version: 2",
+                    "version: 99"
+                )
+            )
+        }
         assertFalse(newer is LegacyConfigException)
         assertTrue("新しいバージョン" in newer.message.orEmpty())
 

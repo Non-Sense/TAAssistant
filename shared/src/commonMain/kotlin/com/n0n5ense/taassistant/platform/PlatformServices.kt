@@ -14,11 +14,24 @@ interface PlatformServices {
     val settings: SettingsStore
     val availableProcessors: Int
 
-    fun pickDirectory(title: String, initial: String?): String?
-    fun pickFile(title: String, initial: String?, extensions: List<String>): String?
+    /** OS 標準のダイアログでフォルダを選ぶ。キャンセルなら null */
+    suspend fun pickDirectory(title: String, initial: String?): String?
 
-    /** 保存先を選ぶ。拡張子が無ければ [extensions] の先頭を付ける。既存ファイルなら上書き確認する */
-    fun pickSaveFile(title: String, initial: String?, extensions: List<String>): String?
+    /** OS 標準のダイアログでファイルを選ぶ。キャンセルなら null */
+    suspend fun pickFile(title: String, initial: String?, extensions: List<String>): String?
+
+    /**
+     * OS 標準のダイアログで保存先を選ぶ。拡張子が無ければ [extensions] の先頭を付ける。既存ファイルの上書き確認は OS のダイアログが行う。
+     * @param initial 最初に表示するファイルかフォルダ
+     * @param suggestedName 最初に入力しておくファイル名 (拡張子なし)。null なら [initial] のファイル名
+     */
+    suspend fun pickSaveFile(
+        title: String,
+        initial: String?,
+        extensions: List<String>,
+        suggestedName: String? = null
+    ): String?
+
     fun parentDirectory(path: String): String?
 
     /**

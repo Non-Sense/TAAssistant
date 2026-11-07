@@ -13,7 +13,12 @@ private const val MAX_LISTED_ENTRIES = 10_000
 internal fun listArchive(file: File, format: ArchiveFormat): ArchiveListing = when (format) {
     ArchiveFormat.Zip, ArchiveFormat.Jar -> listZip(file, format)
     ArchiveFormat.Tar -> file.inputStream().buffered().use { listTar(it, format) }
-    ArchiveFormat.TarGz -> GZIPInputStream(file.inputStream().buffered()).use { listTar(it, format) }
+    ArchiveFormat.TarGz -> GZIPInputStream(file.inputStream().buffered()).use {
+        listTar(
+            it,
+            format
+        )
+    }
 }
 
 /** 中央ディレクトリを読む。UTF-8 フラグのないエントリ名は Shift_JIS で解釈する (展開と同じ) */
@@ -26,7 +31,11 @@ private fun listZip(file: File, format: ArchiveFormat): ArchiveListing =
                 truncated = true
                 break
             }
-            entries += ArchiveEntry(entry.name.trimEnd('/'), entry.size.coerceAtLeast(0), entry.isDirectory)
+            entries += ArchiveEntry(
+                entry.name.trimEnd('/'),
+                entry.size.coerceAtLeast(0),
+                entry.isDirectory
+            )
         }
         ArchiveListing(format, entries, truncated)
     }
@@ -64,11 +73,13 @@ internal fun listTar(input: InputStream, format: ArchiveFormat): ArchiveListing 
             'x' -> {
                 val pax = String(input.readExactly(size.toInt()), Charsets.UTF_8)
                 longName = pax.lineSequence().firstNotNullOfOrNull { line ->
-                    line.substringAfter(' ', "").takeIf { it.startsWith("path=") }?.removePrefix("path=")
+                    line.substringAfter(' ', "").takeIf { it.startsWith("path=") }
+                        ?.removePrefix("path=")
                 }
                 input.skipFully(dataBlocks - size)
                 continue
             }
+
             'g' -> {
                 input.skipFully(dataBlocks)
                 continue
@@ -80,7 +91,11 @@ internal fun listTar(input: InputStream, format: ArchiveFormat): ArchiveListing 
         }
         val isDirectory = type == '5' || name.endsWith("/")
         val path = name.removePrefix("./").trimEnd('/')
-        if (path.isNotEmpty()) entries += ArchiveEntry(path, if (isDirectory) 0 else size, isDirectory)
+        if (path.isNotEmpty()) entries += ArchiveEntry(
+            path,
+            if (isDirectory) 0 else size,
+            isDirectory
+        )
         input.skipFully(dataBlocks)
     }
     return ArchiveListing(format, entries, truncated)

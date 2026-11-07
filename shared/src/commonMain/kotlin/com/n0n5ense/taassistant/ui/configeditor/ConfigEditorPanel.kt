@@ -31,27 +31,21 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
-import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Badge
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationDrawerItem
 import androidx.compose.material3.NavigationDrawerItemDefaults
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.PlainTooltip
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
@@ -62,17 +56,10 @@ import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TooltipAnchorPosition
-import androidx.compose.material3.TooltipBox
-import androidx.compose.material3.TooltipDefaults
 import androidx.compose.material3.VerticalDivider
-import androidx.compose.material3.rememberTooltipState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -95,9 +82,7 @@ import com.n0n5ense.taassistant.core.config.Config
 import com.n0n5ense.taassistant.core.config.ConfigDraft
 import com.n0n5ense.taassistant.core.config.DraftField
 import com.n0n5ense.taassistant.core.config.DraftIssue
-import com.n0n5ense.taassistant.core.config.Task
 import com.n0n5ense.taassistant.core.config.TaskDraft
-import com.n0n5ense.taassistant.core.config.TaskName
 import com.n0n5ense.taassistant.core.config.TestCaseDraft
 import com.n0n5ense.taassistant.core.config.parseSubmissionDirName
 import com.n0n5ense.taassistant.core.config.regexError
@@ -164,12 +149,26 @@ internal fun ConfigEditorPanel(
                     Box(Modifier.weight(1f).fillMaxHeight()) {
                         val task = state.selectedTask
                         when {
-                            task != null -> TaskEditor(task, state.draft.tasks.indexOf(task), state.draft.tasks.size, state.issues, state.collapsedTestCases, viewModel)
+                            task != null -> TaskEditor(
+                                task,
+                                state.draft.tasks.indexOf(task),
+                                state.draft.tasks.size,
+                                state.issues,
+                                state.collapsedTestCases,
+                                viewModel
+                            )
+
                             state.selection is EditorSelection.Task -> EmptyDetail(viewModel)
-                            else -> GeneralSettings(state.draft, state.issues, state.dirNameSample, viewModel)
+                            else -> GeneralSettings(
+                                state.draft,
+                                state.issues,
+                                state.dirNameSample,
+                                viewModel
+                            )
                         }
                     }
                 }
+
                 EditorMode.Yaml -> YamlEditor(state, viewModel, Modifier.weight(1f).fillMaxWidth())
             }
         }
@@ -181,7 +180,11 @@ internal fun ConfigEditorPanel(
 
 /** ViewModel のメッセージをスナックバーで表示する。削除のメッセージには「元に戻す」を付ける */
 @Composable
-private fun MessageSnackbar(message: EditorMessage?, host: SnackbarHostState, viewModel: ConfigEditorViewModel) {
+private fun MessageSnackbar(
+    message: EditorMessage?,
+    host: SnackbarHostState,
+    viewModel: ConfigEditorViewModel
+) {
     LaunchedEffect(message?.id) {
         if (message == null) return@LaunchedEffect
         val result = host.showSnackbar(
@@ -218,7 +221,10 @@ private fun EditorTopBar(
         TooltipIconButton("採点画面に戻る (Esc)", Icons.AutoMirrored.Filled.ArrowBack, onBack)
         // タイトル: ファイル名 + 状態
         Column(Modifier.weight(1f)) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
                 Text(
                     state.path?.let(::fileNameOf) ?: "新しいコンフィグ",
                     style = MaterialTheme.typography.titleLarge,
@@ -226,9 +232,18 @@ private fun EditorTopBar(
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f, fill = false),
                 )
-                if (state.isDirty) StatusLabel("未保存", MaterialTheme.colorScheme.tertiaryContainer, MaterialTheme.colorScheme.onTertiaryContainer)
+                if (state.isDirty) StatusLabel(
+                    "未保存",
+                    MaterialTheme.colorScheme.tertiaryContainer,
+                    MaterialTheme.colorScheme.onTertiaryContainer
+                )
                 if (state.path != null && state.path == gradingConfigPath) {
-                    StatusLabel("採点に使用中", MaterialTheme.colorScheme.secondaryContainer, MaterialTheme.colorScheme.onSecondaryContainer, Icons.Filled.Check)
+                    StatusLabel(
+                        "採点に使用中",
+                        MaterialTheme.colorScheme.secondaryContainer,
+                        MaterialTheme.colorScheme.onSecondaryContainer,
+                        Icons.Filled.Check
+                    )
                 }
             }
             Text(
@@ -245,7 +260,11 @@ private fun EditorTopBar(
                 onClick = viewModel::showFirstIssue,
                 colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),
             ) {
-                Icon(Icons.Filled.Warning, contentDescription = null, modifier = Modifier.size(18.dp))
+                Icon(
+                    Icons.Filled.Warning,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp)
+                )
                 Spacer(Modifier.width(8.dp))
                 Text("エラー ${state.issues.size} 件")
             }
@@ -270,7 +289,9 @@ private fun EditorTopBar(
             OutlinedButton(onClick = {
                 val path = state.path
                 // 変更が無ければ保存し直さない (コメントを消さないため)
-                if (path != null && !state.isDirty) onUseForGrading(path) else viewModel.save(onSaved = onUseForGrading)
+                if (path != null && !state.isDirty) onUseForGrading(path) else viewModel.save(
+                    onSaved = onUseForGrading
+                )
             }) {
                 Text(if (state.path != null && !state.isDirty) "採点に使う" else "保存して採点に使う")
             }
@@ -283,7 +304,10 @@ private fun EditorTopBar(
             listOf(
                 MenuEntry("新規", shortcut = "Ctrl+N", onClick = viewModel::requestNew),
                 MenuEntry("開く…", shortcut = "Ctrl+O", onClick = viewModel::requestOpen),
-                MenuEntry("別名で保存…", shortcut = "Ctrl+Shift+S", onClick = { viewModel.saveAs() }),
+                MenuEntry(
+                    "別名で保存…",
+                    shortcut = "Ctrl+Shift+S",
+                    onClick = { viewModel.saveAs() }),
             ),
         )
     }
@@ -312,7 +336,11 @@ private fun Banners(state: ConfigEditorState, viewModel: ConfigEditorViewModel) 
         Banner(
             icon = Icons.Filled.Info,
             title = "旧形式のコンフィグを新しい形式に変換して開いています",
-            lines = migration.notes + "ファイルはまだ変更していません。保存して上書きすると、変換前の内容を ${fileNameOf(migration.sourcePath)}.bak に残します。",
+            lines = migration.notes + "ファイルはまだ変更していません。保存して上書きすると、変換前の内容を ${
+                fileNameOf(
+                    migration.sourcePath
+                )
+            }.bak に残します。",
             container = MaterialTheme.colorScheme.tertiaryContainer,
             content = MaterialTheme.colorScheme.onTertiaryContainer,
         ) {
@@ -347,7 +375,10 @@ private fun Banner(
         shape = MaterialTheme.shapes.medium,
         modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, bottom = 8.dp),
     ) {
-        Row(Modifier.padding(start = 16.dp, end = 8.dp, top = 12.dp, bottom = 12.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        Row(
+            Modifier.padding(start = 16.dp, end = 8.dp, top = 12.dp, bottom = 12.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
             Icon(icon, contentDescription = null, modifier = Modifier.size(20.dp))
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 Text(title, style = MaterialTheme.typography.titleSmall)
@@ -361,11 +392,19 @@ private fun Banner(
 // ---------------------------------------------------------------- リストペイン
 
 @Composable
-private fun TaskListPane(state: ConfigEditorState, viewModel: ConfigEditorViewModel, modifier: Modifier) {
+private fun TaskListPane(
+    state: ConfigEditorState,
+    viewModel: ConfigEditorViewModel,
+    modifier: Modifier
+) {
     Surface(color = MaterialTheme.colorScheme.surfaceContainerLow, modifier = modifier) {
         val listState = rememberLazyListState()
         Box(Modifier.fillMaxSize()) {
-            LazyColumn(Modifier.fillMaxSize().padding(horizontal = 12.dp), state = listState, contentPadding = androidx.compose.foundation.layout.PaddingValues(vertical = 12.dp)) {
+            LazyColumn(
+                Modifier.fillMaxSize().padding(horizontal = 12.dp),
+                state = listState,
+                contentPadding = androidx.compose.foundation.layout.PaddingValues(vertical = 12.dp)
+            ) {
                 item {
                     PaneItem(
                         label = "全体設定",
@@ -414,7 +453,12 @@ private fun PaneItem(
     NavigationDrawerItem(
         label = {
             Column {
-                Text(label, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = if (selected) FontWeight.SemiBold else null)
+                Text(
+                    label,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    fontWeight = if (selected) FontWeight.SemiBold else null
+                )
                 Text(
                     supporting,
                     style = MaterialTheme.typography.bodySmall,
@@ -483,7 +527,11 @@ private fun FormSection(
             Column(Modifier.weight(1f)) {
                 Text(title, style = MaterialTheme.typography.titleMedium)
                 if (description != null) {
-                    Text(description, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(
+                        description,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
             }
             trailing()
@@ -495,11 +543,22 @@ private fun FormSection(
 /** 正規表現をその場で試す欄 (保存されない) */
 @Composable
 private fun TryBox(title: String, content: @Composable () -> Unit) {
-    Surface(color = MaterialTheme.colorScheme.surfaceContainer, shape = MaterialTheme.shapes.medium, modifier = Modifier.fillMaxWidth()) {
+    Surface(
+        color = MaterialTheme.colorScheme.surfaceContainer,
+        shape = MaterialTheme.shapes.medium,
+        modifier = Modifier.fillMaxWidth()
+    ) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
                 Text(title, style = MaterialTheme.typography.labelLarge)
-                Text("保存されません", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(
+                    "保存されません",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
             content()
         }
@@ -509,8 +568,14 @@ private fun TryBox(title: String, content: @Composable () -> Unit) {
 // ---------------------------------------------------------------- 全体設定
 
 @Composable
-private fun GeneralSettings(draft: ConfigDraft, issues: List<DraftIssue>, dirNameSample: String, viewModel: ConfigEditorViewModel) {
-    fun issue(field: DraftField) = issues.firstOrNull { it.field == field && it.taskKey == null }?.message
+private fun GeneralSettings(
+    draft: ConfigDraft,
+    issues: List<DraftIssue>,
+    dirNameSample: String,
+    viewModel: ConfigEditorViewModel
+) {
+    fun issue(field: DraftField) =
+        issues.firstOrNull { it.field == field && it.taskKey == null }?.message
 
     DetailPane {
         Text("全体設定", style = MaterialTheme.typography.headlineSmall)
@@ -557,7 +622,7 @@ private fun GeneralSettings(draft: ConfigDraft, issues: List<DraftIssue>, dirNam
         FormSection(
             "提出ディレクトリ名",
             description = "Moodle の提出ディレクトリ名から学籍番号と氏名を取り出す正規表現。名前付きグループ id = 学籍番号 (必須)、name = 氏名。" +
-                "名前付きグループが無ければ 1番目 = 学籍番号、2番目 = 氏名。",
+                    "名前付きグループが無ければ 1番目 = 学籍番号、2番目 = 氏名。",
             trailing = {
                 TextButton(
                     onClick = { viewModel.updateGeneral { it.copy(submissionDirPattern = Config.DEFAULT_SUBMISSION_DIR_PATTERN) } },
@@ -582,7 +647,10 @@ private fun GeneralSettings(draft: ConfigDraft, issues: List<DraftIssue>, dirNam
                 )
                 if (dirNameSample.isNotEmpty() && regexError(draft.submissionDirPattern) == null) {
                     val parsed = remember(draft.submissionDirPattern, dirNameSample) {
-                        Config(submissionDirPattern = draft.submissionDirPattern, tasks = emptyMap()).parseSubmissionDirName(dirNameSample)
+                        Config(
+                            submissionDirPattern = draft.submissionDirPattern,
+                            tasks = emptyMap()
+                        ).parseSubmissionDirName(dirNameSample)
                     }
                     MatchResultText(
                         matched = parsed != null,
@@ -627,15 +695,30 @@ private fun TaskEditor(
             OverflowMenu(
                 "課題の操作",
                 listOf(
-                    MenuEntry("上へ移動", Icons.Filled.KeyboardArrowUp, enabled = index > 0) { viewModel.moveTask(task.key, -1) },
-                    MenuEntry("下へ移動", Icons.Filled.KeyboardArrowDown, enabled = index < taskCount - 1) { viewModel.moveTask(task.key, 1) },
+                    MenuEntry(
+                        "上へ移動",
+                        Icons.Filled.KeyboardArrowUp,
+                        enabled = index > 0
+                    ) { viewModel.moveTask(task.key, -1) },
+                    MenuEntry(
+                        "下へ移動",
+                        Icons.Filled.KeyboardArrowDown,
+                        enabled = index < taskCount - 1
+                    ) { viewModel.moveTask(task.key, 1) },
                     MenuEntry("複製") { viewModel.duplicateTask(task.key) },
-                    MenuEntry("削除", Icons.Filled.Delete, destructive = true) { viewModel.removeTask(task.key) },
+                    MenuEntry(
+                        "削除",
+                        Icons.Filled.Delete,
+                        destructive = true
+                    ) { viewModel.removeTask(task.key) },
                 ),
             )
         }
 
-        FormSection("課題の判定", description = "ソースに検索ワードのどれかが含まれ、除外ワードがどれも含まれなければ、この課題の提出とみなします。") {
+        FormSection(
+            "課題の判定",
+            description = "ソースに検索ワードのどれかが含まれ、除外ワードがどれも含まれなければ、この課題の提出とみなします。"
+        ) {
             EditorField(
                 label = "課題名",
                 value = task.name,
@@ -678,7 +761,12 @@ private fun TaskEditor(
             trailing = {
                 if (task.testCases.size > 1) {
                     val allCollapsed = task.testCases.all { it.key in collapsed }
-                    TextButton(onClick = { viewModel.setTestCasesCollapsed(task.testCases.map { it.key }, !allCollapsed) }) {
+                    TextButton(onClick = {
+                        viewModel.setTestCasesCollapsed(
+                            task.testCases.map { it.key },
+                            !allCollapsed
+                        )
+                    }) {
                         Text(if (allCollapsed) "すべて開く" else "すべて閉じる")
                     }
                 }
@@ -695,8 +783,19 @@ private fun TaskEditor(
                     expectError = expectError,
                     // エラーのあるカードは閉じられないようにする (エラーが見えなくなるため)
                     expanded = testCase.key !in collapsed || nameError != null || expectError != null,
-                    onToggle = { viewModel.setTestCasesCollapsed(listOf(testCase.key), testCase.key !in collapsed) },
-                    onChange = { transform -> viewModel.updateTestCase(task.key, testCase.key, transform) },
+                    onToggle = {
+                        viewModel.setTestCasesCollapsed(
+                            listOf(testCase.key),
+                            testCase.key !in collapsed
+                        )
+                    },
+                    onChange = { transform ->
+                        viewModel.updateTestCase(
+                            task.key,
+                            testCase.key,
+                            transform
+                        )
+                    },
                     onMove = { delta -> viewModel.moveTestCase(task.key, testCase.key, delta) },
                     onDuplicate = { viewModel.duplicateTestCase(task.key, testCase.key) },
                     onRemove = { viewModel.removeTestCase(task.key, testCase.key) },
@@ -731,7 +830,8 @@ private fun TestCaseCard(
     OutlinedCard(Modifier.fillMaxWidth()) {
         // ヘッダー: クリックで開閉
         Row(
-            Modifier.fillMaxWidth().clickable(enabled = !hasError, onClick = onToggle).padding(start = 8.dp, end = 4.dp, top = 4.dp, bottom = 4.dp),
+            Modifier.fillMaxWidth().clickable(enabled = !hasError, onClick = onToggle)
+                .padding(start = 8.dp, end = 4.dp, top = 4.dp, bottom = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
@@ -740,7 +840,11 @@ private fun TestCaseCard(
                 contentDescription = if (expanded) "閉じる" else "開く",
                 tint = if (hasError) MaterialTheme.colorScheme.outlineVariant else MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            Text("#${index + 1}", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+            Text(
+                "#${index + 1}",
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.primary
+            )
             Text(
                 testCase.name.ifBlank { "(無題)" },
                 style = MaterialTheme.typography.titleSmall,
@@ -768,8 +872,16 @@ private fun TestCaseCard(
             OverflowMenu(
                 "テストケースの操作",
                 listOf(
-                    MenuEntry("上へ移動", Icons.Filled.KeyboardArrowUp, enabled = index > 0) { onMove(-1) },
-                    MenuEntry("下へ移動", Icons.Filled.KeyboardArrowDown, enabled = index < count - 1) { onMove(1) },
+                    MenuEntry(
+                        "上へ移動",
+                        Icons.Filled.KeyboardArrowUp,
+                        enabled = index > 0
+                    ) { onMove(-1) },
+                    MenuEntry(
+                        "下へ移動",
+                        Icons.Filled.KeyboardArrowDown,
+                        enabled = index < count - 1
+                    ) { onMove(1) },
                     MenuEntry("複製", onClick = onDuplicate),
                     MenuEntry("削除", Icons.Filled.Delete, destructive = true, onClick = onRemove),
                 ),
@@ -813,7 +925,11 @@ private fun TestCaseCard(
                             modifier = m,
                         )
                     },
-                    RowField(1.5f, expectError, "1行に1つ。改行を空白に置換した標準出力「全体」にマッチさせます") { m ->
+                    RowField(
+                        1.5f,
+                        expectError,
+                        "1行に1つ。改行を空白に置換した標準出力「全体」にマッチさせます"
+                    ) { m ->
                         EditorField(
                             label = "想定出力の正規表現",
                             value = testCase.expect,
@@ -857,8 +973,15 @@ private fun testCaseSummary(testCase: TestCaseDraft): String = buildList {
 // ---------------------------------------------------------------- YAML
 
 @Composable
-private fun YamlEditor(state: ConfigEditorState, viewModel: ConfigEditorViewModel, modifier: Modifier) {
-    Column(modifier.padding(horizontal = 24.dp, vertical = 16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+private fun YamlEditor(
+    state: ConfigEditorState,
+    viewModel: ConfigEditorViewModel,
+    modifier: Modifier
+) {
+    Column(
+        modifier.padding(horizontal = 24.dp, vertical = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
         Text(
             "YAML を直接編集できます。フォームに切り替えるか保存すると内容が反映されます。",
             style = MaterialTheme.typography.bodyMedium,
@@ -872,10 +995,20 @@ private fun YamlEditor(state: ConfigEditorState, viewModel: ConfigEditorViewMode
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 Row(Modifier.padding(12.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Icon(Icons.Filled.Warning, contentDescription = null, modifier = Modifier.size(20.dp))
+                    Icon(
+                        Icons.Filled.Warning,
+                        contentDescription = null,
+                        modifier = Modifier.size(20.dp)
+                    )
                     Column {
                         Text("YAML を解析できません", style = MaterialTheme.typography.titleSmall)
-                        Text(it, style = MaterialTheme.typography.bodySmall, fontFamily = FontFamily.Monospace, maxLines = 6, overflow = TextOverflow.Ellipsis)
+                        Text(
+                            it,
+                            style = MaterialTheme.typography.bodySmall,
+                            fontFamily = FontFamily.Monospace,
+                            maxLines = 6,
+                            overflow = TextOverflow.Ellipsis
+                        )
                     }
                 }
             }
@@ -936,13 +1069,19 @@ private class RowField(
 @Composable
 private fun FieldRow(vararg fields: RowField) {
     Column {
-        Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+        Row(
+            Modifier.fillMaxWidth().height(IntrinsicSize.Min),
+            horizontalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
             fields.forEach { it.field(Modifier.weight(it.weight).fillMaxHeight()) }
         }
         if (fields.any { it.error != null || it.hint != null }) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                 fields.forEach { field ->
-                    Box(Modifier.weight(field.weight).padding(start = 16.dp, end = 16.dp, top = 4.dp)) {
+                    Box(
+                        Modifier.weight(field.weight)
+                            .padding(start = 16.dp, end = 16.dp, top = 4.dp)
+                    ) {
                         (field.error ?: field.hint)?.let {
                             Text(
                                 it,
@@ -974,10 +1113,18 @@ private fun EditorField(
 ) {
     val labelSlot: @Composable () -> Unit = { Text(label) }
     val placeholderSlot: (@Composable () -> Unit)? =
-        placeholder?.let { { Text(it, style = if (monospaced) monospace else MaterialTheme.typography.bodyMedium) } }
+        placeholder?.let {
+            {
+                Text(
+                    it,
+                    style = if (monospaced) monospace else MaterialTheme.typography.bodyMedium
+                )
+            }
+        }
     val suffixSlot: (@Composable () -> Unit)? = suffix?.let { { Text(it) } }
     // エラーがあるときは説明文の代わりにエラーを表示する
-    val supportingSlot: (@Composable () -> Unit)? = (error ?: hint)?.takeIf { supportingInside }?.let { { Text(it) } }
+    val supportingSlot: (@Composable () -> Unit)? =
+        (error ?: hint)?.takeIf { supportingInside }?.let { { Text(it) } }
     val textStyle = if (monospaced) monospace else MaterialTheme.typography.bodyLarge
     OutlinedTextField(
         value = value,
@@ -1002,6 +1149,7 @@ private fun MatchResultText(matched: Boolean, text: String) {
         color = foreground,
         style = MaterialTheme.typography.bodySmall,
         fontWeight = FontWeight.SemiBold,
-        modifier = Modifier.background(background, MaterialTheme.shapes.small).padding(horizontal = 8.dp, vertical = 4.dp),
+        modifier = Modifier.background(background, MaterialTheme.shapes.small)
+            .padding(horizontal = 8.dp, vertical = 4.dp),
     )
 }

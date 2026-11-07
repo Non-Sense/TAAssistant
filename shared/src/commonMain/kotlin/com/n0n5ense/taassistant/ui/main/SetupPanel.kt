@@ -19,7 +19,6 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.n0n5ense.taassistant.core.grading.LastStep
@@ -72,7 +71,7 @@ internal fun SetupPanel(
             TextButton(onClick = onEditConfig, modifier = Modifier.padding(top = 0.dp)) {
                 Text(
                     (if (setup.configPath.isBlank()) "コンフィグを新規作成…" else "コンフィグを編集…") +
-                        if (configEditorDirty) "  ● 未保存の変更あり" else "",
+                            if (configEditorDirty) "  ● 未保存の変更あり" else "",
                 )
             }
             PathField(
@@ -109,7 +108,11 @@ internal fun SetupPanel(
             SectionLabel("出力形式")
             Column {
                 ReportFormat.entries.forEach { format ->
-                    RadioRow(format.label, selected = setup.reportFormat == format, enabled = editable) {
+                    RadioRow(
+                        format.label,
+                        selected = setup.reportFormat == format,
+                        enabled = editable
+                    ) {
                         viewModel.updateSetup { it.copy(reportFormat = format) }
                     }
                 }
@@ -127,8 +130,15 @@ internal fun SetupPanel(
 
             HorizontalDivider(Modifier.padding(vertical = 6.dp))
 
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                Button(onClick = viewModel::start, enabled = !state.isRunning, modifier = Modifier.weight(1f)) {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Button(
+                    onClick = viewModel::start,
+                    enabled = !state.isRunning,
+                    modifier = Modifier.weight(1f)
+                ) {
                     Text("実行")
                 }
                 OutlinedButton(onClick = viewModel::cancel, enabled = state.isRunning) {
@@ -140,7 +150,11 @@ internal fun SetupPanel(
                 Text("ログ", modifier = Modifier.padding(end = 12.dp))
                 LogCounts(state.logs)
             }
-            OutlinedButton(onClick = viewModel::export, enabled = state.canExport, modifier = Modifier.fillMaxWidth()) {
+            OutlinedButton(
+                onClick = viewModel::export,
+                enabled = state.canExport,
+                modifier = Modifier.fillMaxWidth()
+            ) {
                 Text("結果ファイルを出力")
             }
 
@@ -185,12 +199,30 @@ private fun ProjectHeader(state: UiState, viewModel: AppViewModel) {
                 overflow = TextOverflow.Ellipsis,
             )
             when (val save = state.saveStatus) {
-                SaveStatus.Saved -> Text("自動保存済み", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                SaveStatus.Saving -> Text("保存中…", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                is SaveStatus.Failed -> Text(save.message, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error)
+                SaveStatus.Saved -> Text(
+                    "自動保存済み",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
+                SaveStatus.Saving -> Text(
+                    "保存中…",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
+                is SaveStatus.Failed -> Text(
+                    save.message,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.error
+                )
             }
             state.projectError?.let {
-                Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error)
+                Text(
+                    it,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.error
+                )
             }
             state.projectNotice?.let { notice ->
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -203,7 +235,10 @@ private fun ProjectHeader(state: UiState, viewModel: AppViewModel) {
                         modifier = Modifier.weight(1f),
                     )
                     notice.openPath?.let { path ->
-                        TextButton(onClick = { viewModel.openProject(path) }, enabled = !state.isRunning) { Text("開く") }
+                        TextButton(
+                            onClick = { viewModel.openProject(path) },
+                            enabled = !state.isRunning
+                        ) { Text("開く") }
                     }
                     TextButton(onClick = viewModel::dismissProjectNotice) { Text("閉じる") }
                 }
@@ -212,13 +247,34 @@ private fun ProjectHeader(state: UiState, viewModel: AppViewModel) {
         OverflowMenu(
             "プロジェクト",
             listOf(
-                MenuEntry("新しいプロジェクト…", enabled = !state.isRunning, onClick = viewModel::newProject),
-                MenuEntry("プロジェクトを開く…", enabled = !state.isRunning, onClick = { viewModel.openProject() }),
-                MenuEntry("別名で保存…", enabled = !state.isRunning, onClick = viewModel::saveProjectAs),
-                MenuEntry("複製…", enabled = !state.isRunning, onClick = { viewModel.duplicateProject(includeResults = true) }),
-                MenuEntry("設定だけを複製…", enabled = !state.isRunning, onClick = { viewModel.duplicateProject(includeResults = false) }),
+                MenuEntry(
+                    "新しいプロジェクト…",
+                    enabled = !state.isRunning,
+                    onClick = viewModel::newProject
+                ),
+                MenuEntry(
+                    "プロジェクトを開く…",
+                    enabled = !state.isRunning,
+                    onClick = { viewModel.openProject() }),
+                MenuEntry(
+                    "別名で保存…",
+                    enabled = !state.isRunning,
+                    onClick = viewModel::saveProjectAs
+                ),
+                MenuEntry(
+                    "複製…",
+                    enabled = !state.isRunning,
+                    onClick = { viewModel.duplicateProject(includeResults = true) }),
+                MenuEntry(
+                    "設定だけを複製…",
+                    enabled = !state.isRunning,
+                    onClick = { viewModel.duplicateProject(includeResults = false) }),
                 MenuEntry("フォルダを開く", onClick = viewModel::openProjectFolder),
-                MenuEntry("プロジェクトを閉じる", enabled = !state.isRunning, onClick = viewModel::closeProject),
+                MenuEntry(
+                    "プロジェクトを閉じる",
+                    enabled = !state.isRunning,
+                    onClick = viewModel::closeProject
+                ),
             ),
         )
     }

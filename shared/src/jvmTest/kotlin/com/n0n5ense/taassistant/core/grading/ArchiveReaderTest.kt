@@ -52,10 +52,18 @@ class ArchiveReaderTest {
         val listing = listArchive(file, ArchiveFormat.Zip)
         assertFalse(listing.truncated)
         assertEquals(
-            listOf("課題1", "課題1/Main.java", "課題1/Main.class", "課題2/sub/Hello.java", "__MACOSX/._Main.java"),
+            listOf(
+                "課題1",
+                "課題1/Main.java",
+                "課題1/Main.class",
+                "課題2/sub/Hello.java",
+                "__MACOSX/._Main.java"
+            ),
             listing.entries.map { it.path },
         )
-        assertEquals(listOf(true, false, false, false, false), listing.entries.map { it.isDirectory })
+        assertEquals(
+            listOf(true, false, false, false, false),
+            listing.entries.map { it.isDirectory })
         assertEquals(13, listing.entries[1].size)
         assertEquals(4, listing.fileCount)
         // 採点時の展開で除外されるもの
@@ -72,11 +80,17 @@ class ArchiveReaderTest {
             zip.putNextEntry(ZipEntry("課題/Main.java"))
             zip.closeEntry()
         }
-        assertEquals(listOf("課題/Main.java"), listArchive(file, ArchiveFormat.Zip).entries.map { it.path })
+        assertEquals(
+            listOf("課題/Main.java"),
+            listArchive(file, ArchiveFormat.Zip).entries.map { it.path })
     }
 
     /** テスト用の最小限の tar を作る */
-    private fun tar(vararg entries: Pair<String, ByteArray?>, longNames: Boolean = false, pax: Boolean = false): ByteArray {
+    private fun tar(
+        vararg entries: Pair<String, ByteArray?>,
+        longNames: Boolean = false,
+        pax: Boolean = false
+    ): ByteArray {
         val out = ByteArrayOutputStream()
         fun header(name: String, size: Int, type: Char, prefix: String = "") {
             val h = ByteArray(512)
@@ -87,6 +101,7 @@ class ArchiveReaderTest {
             prefix.toByteArray().copyInto(h, 345)
             out.write(h)
         }
+
         fun data(bytes: ByteArray) {
             out.write(bytes)
             out.write(ByteArray((512 - bytes.size % 512) % 512))
@@ -101,6 +116,7 @@ class ArchiveReaderTest {
                     data(longName)
                     header(name.take(20), content.size, if (isDir) '5' else '0')
                 }
+
                 pax && name.length > 20 -> {
                     val record = "path=$name\n"
                     val body = "${record.toByteArray().size + 3} $record".let { r ->
@@ -111,10 +127,16 @@ class ArchiveReaderTest {
                     data(body)
                     header(name.take(20), content.size, if (isDir) '5' else '0')
                 }
+
                 else -> {
                     val slash = name.lastIndexOf('/', name.length - 2)
                     if (name.length > 40 && slash > 0) {
-                        header(name.substring(slash + 1), content.size, if (isDir) '5' else '0', prefix = name.substring(0, slash))
+                        header(
+                            name.substring(slash + 1),
+                            content.size,
+                            if (isDir) '5' else '0',
+                            prefix = name.substring(0, slash)
+                        )
                     } else {
                         header(name, content.size, if (isDir) '5' else '0')
                     }
@@ -136,7 +158,11 @@ class ArchiveReaderTest {
         val tarFile = File(dir, "a.tar").apply { writeBytes(bytes) }
         val listing = listArchive(tarFile, ArchiveFormat.Tar)
         assertEquals(
-            listOf("src", "src/Main.java", "very/long/directory/name/for/the/ustar/prefix/Test.java"),
+            listOf(
+                "src",
+                "src/Main.java",
+                "very/long/directory/name/for/the/ustar/prefix/Test.java"
+            ),
             listing.entries.map { it.path },
         )
         assertEquals(listOf(0L, 13L, 600L), listing.entries.map { it.size })
@@ -150,9 +176,17 @@ class ArchiveReaderTest {
     @Test
     fun readsGnuLongNamesAndPaxPaths() {
         val name = "課題/とても長いファイル名のディレクトリ/Main.java"
-        val gnu = File(dir, "gnu.tar").apply { writeBytes(tar(name to "x".toByteArray(), longNames = true)) }
+        val gnu = File(dir, "gnu.tar").apply {
+            writeBytes(
+                tar(
+                    name to "x".toByteArray(),
+                    longNames = true
+                )
+            )
+        }
         assertEquals(listOf(name), listArchive(gnu, ArchiveFormat.Tar).entries.map { it.path })
-        val pax = File(dir, "pax.tar").apply { writeBytes(tar(name to "x".toByteArray(), pax = true)) }
+        val pax =
+            File(dir, "pax.tar").apply { writeBytes(tar(name to "x".toByteArray(), pax = true)) }
         assertEquals(listOf(name), listArchive(pax, ArchiveFormat.Tar).entries.map { it.path })
     }
 }

@@ -98,7 +98,8 @@ fun ConfigDraft.toConfig(): Config = Config(
     },
 )
 
-private fun String.nonBlankLines(): List<String> = replace("\r", "").split("\n").filter { it.isNotBlank() }
+private fun String.nonBlankLines(): List<String> =
+    replace("\r", "").split("\n").filter { it.isNotBlank() }
 
 private fun String.inputLines(): List<String> {
     val text = replace("\r", "")
@@ -117,7 +118,13 @@ fun ConfigDraft.validate(): List<DraftIssue> = buildList {
         add(DraftIssue(DraftField.RunningTimeout, "整数(ミリ秒)を入力してください。負の値で無制限"))
     }
     when {
-        outputFileName.isBlank() -> add(DraftIssue(DraftField.OutputFileName, "ファイル名を入力してください"))
+        outputFileName.isBlank() -> add(
+            DraftIssue(
+                DraftField.OutputFileName,
+                "ファイル名を入力してください"
+            )
+        )
+
         outputFileName.any { it in invalidFileNameChars } ->
             add(DraftIssue(DraftField.OutputFileName, "ファイル名に使えない文字が含まれています"))
     }
@@ -127,8 +134,21 @@ fun ConfigDraft.validate(): List<DraftIssue> = buildList {
     for (task in tasks) {
         val name = task.name.trim()
         when {
-            name.isEmpty() -> add(DraftIssue(DraftField.TaskName, "課題名を入力してください", task.key))
-            taskNameCounts.getValue(name) > 1 -> add(DraftIssue(DraftField.TaskName, "課題名が重複しています", task.key))
+            name.isEmpty() -> add(
+                DraftIssue(
+                    DraftField.TaskName,
+                    "課題名を入力してください",
+                    task.key
+                )
+            )
+
+            taskNameCounts.getValue(name) > 1 -> add(
+                DraftIssue(
+                    DraftField.TaskName,
+                    "課題名が重複しています",
+                    task.key
+                )
+            )
         }
         if (task.words.nonBlankLines().isEmpty()) {
             add(DraftIssue(DraftField.Words, "検索ワードを1つ以上入力してください", task.key))
@@ -138,9 +158,24 @@ fun ConfigDraft.validate(): List<DraftIssue> = buildList {
             val caseName = tc.name.trim()
             when {
                 caseName.isEmpty() ->
-                    add(DraftIssue(DraftField.TestCaseName, "テストケース名を入力してください", task.key, tc.key))
+                    add(
+                        DraftIssue(
+                            DraftField.TestCaseName,
+                            "テストケース名を入力してください",
+                            task.key,
+                            tc.key
+                        )
+                    )
+
                 caseNameCounts.getValue(caseName) > 1 ->
-                    add(DraftIssue(DraftField.TestCaseName, "テストケース名が課題内で重複しています", task.key, tc.key))
+                    add(
+                        DraftIssue(
+                            DraftField.TestCaseName,
+                            "テストケース名が課題内で重複しています",
+                            task.key,
+                            tc.key
+                        )
+                    )
             }
             tc.expect.nonBlankLines().forEachIndexed { i, line ->
                 regexError(line)?.let {

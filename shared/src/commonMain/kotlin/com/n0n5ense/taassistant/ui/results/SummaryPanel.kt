@@ -60,14 +60,22 @@ internal fun SummaryPanel(
         }
         return
     }
-    val table = remember(outcome, state.results) { buildSummary(outcome.config, outcome.students, state.results) }
+    val table = remember(outcome, state.results) {
+        buildSummary(
+            outcome.config,
+            outcome.students,
+            state.results
+        )
+    }
     val horizontal = rememberScrollState()
     val listState = rememberLazyListState()
     val interventions = remember(state.results) { state.results.interventionsByStudent() }
 
     fun openCell(row: SummaryRow, column: SummaryColumn) {
-        val candidates = state.results.filter { it.studentId == row.studentId && it.taskName == column.taskName }
-        val target = candidates.firstOrNull { it.testCase == column.testCase } ?: candidates.firstOrNull()
+        val candidates =
+            state.results.filter { it.studentId == row.studentId && it.taskName == column.taskName }
+        val target =
+            candidates.firstOrNull { it.testCase == column.testCase } ?: candidates.firstOrNull()
         target?.let { onOpenResult(it.id) }
     }
 
@@ -137,7 +145,10 @@ private fun SummaryRowView(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         // 学籍番号・名前のクリックで学生のページを開く
-        Row(Modifier.fillMaxHeight().clickable(onClick = onOpenStudent), verticalAlignment = Alignment.CenterVertically) {
+        Row(
+            Modifier.fillMaxHeight().clickable(onClick = onOpenStudent),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
             Text(
                 row.studentId.value,
                 style = MaterialTheme.typography.bodySmall,
@@ -159,7 +170,8 @@ private fun SummaryRowView(
         row.acceptRatios.forEach { ratio -> RatioCell(ratio) }
         row.stats.forEachIndexed { index, judge ->
             Box(
-                Modifier.width(statWidth).fillMaxHeight().clickable { onCellClick(columns[index]) }.padding(horizontal = 8.dp),
+                Modifier.width(statWidth).fillMaxHeight().clickable { onCellClick(columns[index]) }
+                    .padding(horizontal = 8.dp),
                 contentAlignment = Alignment.CenterStart,
             ) {
                 JudgeBadge(judge)

@@ -8,9 +8,10 @@ import com.n0n5ense.taassistant.core.model.encoding
 import com.n0n5ense.taassistant.core.project.ProjectCodec
 import com.n0n5ense.taassistant.core.project.ProjectFile
 import com.n0n5ense.taassistant.core.project.TaskAssignment
-import com.n0n5ense.taassistant.core.report.Csv
 import com.n0n5ense.taassistant.core.report.ReportFormat
 import com.n0n5ense.taassistant.core.report.buildReport
+import kotlinx.coroutines.runBlocking
+import org.apache.poi.xssf.usermodel.XSSFWorkbook
 import java.io.File
 import java.nio.charset.Charset
 import java.nio.file.Files
@@ -21,8 +22,6 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
-import kotlinx.coroutines.runBlocking
-import org.apache.poi.xssf.usermodel.XSSFWorkbook
 
 /** 実際に javac / java を使って、展開からレポート出力までを通しで確認する */
 class PipelineIntegrationTest {
@@ -114,8 +113,14 @@ class PipelineIntegrationTest {
                 "kadai/jp/example/Hello.java" to packaged.toByteArray(shiftJis),
             ),
         )
-        submission("t0000002 鈴木_222_assignsubmission_file_", mapOf("Sum.java" to broken.toByteArray()))
-        submission("t0000003 佐藤_333_assignsubmission_file", mapOf("Sum.java" to infinite.toByteArray()))
+        submission(
+            "t0000002 鈴木_222_assignsubmission_file_",
+            mapOf("Sum.java" to broken.toByteArray())
+        )
+        submission(
+            "t0000003 佐藤_333_assignsubmission_file",
+            mapOf("Sum.java" to infinite.toByteArray())
+        )
         File(root, "t0000004 提出なし_444_assignsubmission_file_").mkdirs()
         val configFile = File(root, "config.yaml").apply { writeText(config) }
 
@@ -139,7 +144,10 @@ class PipelineIntegrationTest {
             outcome.compiled.single { it.source.fileName == "Hello.java" }.outcome.encoding,
         )
         assertEquals(listOf(Judge.CE), judgeOf("t0000002", null))
-        assertEquals(listOf(Judge.TLE, Judge.TLE), judgeOf("t0000003", "sum") + judgeOf("t0000003", "stdin"))
+        assertEquals(
+            listOf(Judge.TLE, Judge.TLE),
+            judgeOf("t0000003", "sum") + judgeOf("t0000003", "stdin")
+        )
 
         val report = buildReport(outcome.config, outcome.students, outcome.results)
         val summaryOf = report.summary.rows.associateBy { it.studentId.value }
@@ -149,7 +157,10 @@ class PipelineIntegrationTest {
         val outDir = File(root, "out")
         val xlsx = toolkit.writeReport(outDir.path, "result", ReportFormat.Xlsx, report).single()
         XSSFWorkbook(File(xlsx)).use { wb ->
-            assertEquals(listOf("Detail", "Summary"), (0 until wb.numberOfSheets).map(wb::getSheetName))
+            assertEquals(
+                listOf("Detail", "Summary"),
+                (0 until wb.numberOfSheets).map(wb::getSheetName)
+            )
             assertEquals(outcome.results.size, wb.getSheet("Detail").lastRowNum)
             assertEquals(4, wb.getSheet("Summary").lastRowNum)
         }
@@ -167,19 +178,32 @@ class PipelineIntegrationTest {
         }
         val yamlPath = File(outDir, "config.yaml").path
         toolkit.writeTextFile(yamlPath, ConfigParser.encode(outcome.config))
-        assertFalse(File(yamlPath).readBytes().take(3) == utf8Bom.toList(), "YAML に BOM が付いています")
+        assertFalse(
+            File(yamlPath).readBytes().take(3) == utf8Bom.toList(),
+            "YAML に BOM が付いています"
+        )
 
         // ---- 課題を特定できない (NF) ソースへの割り当て
         val unnamed = correct.replace("// 課題1", "// (課題名なし)")
-        submission("t0000005 名無し_555_assignsubmission_file_", mapOf("Sum.java" to unnamed.toByteArray()))
+        submission(
+            "t0000005 名無し_555_assignsubmission_file_",
+            mapOf("Sum.java" to unnamed.toByteArray())
+        )
         val pipeline = GradingPipeline(toolkit)
-        val withNf = pipeline.run(GradingRequest(rootDir = root.path, configPath = configFile.path)) { }
+        val withNf =
+            pipeline.run(GradingRequest(rootDir = root.path, configPath = configFile.path)) { }
         val nf = withNf.results.single { it.studentId.value == "t0000005" }
         assertEquals(Judge.NF, nf.judge)
 
         // その場でテストする
         val compiled = withNf.compiled.single { it.source.path == nf.source.path }
-        val tested = pipeline.testSource(withNf.config, compiled, listOf(TaskName("課題1")), JavaToolchain(), 2)
+        val tested = pipeline.testSource(
+            withNf.config,
+            compiled,
+            listOf(TaskName("課題1")),
+            JavaToolchain(),
+            2
+        )
         assertEquals(listOf(Judge.AC, Judge.AC), tested.map { it.judge })
         assertTrue(tested.all { it.assigned })
 
@@ -197,9 +221,16 @@ class PipelineIntegrationTest {
 
         // プロジェクトファイルとして保存・読み込みできる
         val projectPath = File(root, "test.taa").path
-        val project = ProjectFile(outcome = rerun, assignments = listOf(TaskAssignment(nf.source.displayPath, listOf(TaskName("課題1")))))
+        val project = ProjectFile(
+            outcome = rerun,
+            assignments = listOf(TaskAssignment(nf.source.displayPath, listOf(TaskName("課題1"))))
+        )
         toolkit.writeBinaryFile(projectPath, ProjectCodec.encode(project))
         assertEquals(project, ProjectCodec.decode(toolkit.readBinaryFile(projectPath)))
-        assertEquals(listOf(0x1f.toByte(), 0x8b.toByte()), File(projectPath).readBytes().take(2), "gzip で保存する")
+        assertEquals(
+            listOf(0x1f.toByte(), 0x8b.toByte()),
+            File(projectPath).readBytes().take(2),
+            "gzip で保存する"
+        )
     }
 }

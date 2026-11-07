@@ -4,9 +4,11 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.SemanticsNodeInteractionsProvider
+import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.isPopup
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performKeyInput
@@ -41,6 +43,7 @@ import java.util.zip.ZipOutputStream
 import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
@@ -62,7 +65,13 @@ class NavigationUiTest {
         val real = createPlatformServices()
         val values = mutableMapOf("lastProject" to projectPath)
         return object : PlatformServices by real {
-            override fun pickSaveFile(title: String, initial: String?, extensions: List<String>): String? = savePaths.removeFirstOrNull()
+            override suspend fun pickSaveFile(
+                title: String,
+                initial: String?,
+                extensions: List<String>,
+                suggestedName: String?
+            ): String? =
+                savePaths.removeFirstOrNull()
 
             override val settings: SettingsStore = object : SettingsStore {
                 override fun get(key: String): String? = values[key]
@@ -115,7 +124,12 @@ class NavigationUiTest {
         waitUntil(timeoutMillis = 10_000) { exists(editButton) }
         onNode(editButton).performClick()
         waitUntil(timeoutMillis = 10_000) { exists(backButton) }
-        onNode(hasText("課題1", substring = true).and(androidx.compose.ui.test.hasClickAction())).performClick()
+        onNode(
+            hasText(
+                "課題1",
+                substring = true
+            ).and(androidx.compose.ui.test.hasClickAction())
+        ).performClick()
         onRoot().performKeyInput { pressKey(Key.Escape) }
         waitUntil(timeoutMillis = 10_000) { exists(editButton) && !exists(backButton) }
     }
@@ -123,7 +137,17 @@ class NavigationUiTest {
     @Test
     fun opensStudentPage() = runComposeUiTest {
         val nl = Char(10).toString()
-        File(dir, "config.yaml").writeText(listOf("version: 2", "tasks:", "  課題1:", "    word: [課題1]", "    testcase:", "      - name: t1", "        expect: ['x']").joinToString(nl))
+        File(dir, "config.yaml").writeText(
+            listOf(
+                "version: 2",
+                "tasks:",
+                "  課題1:",
+                "    word: [課題1]",
+                "    testcase:",
+                "      - name: t1",
+                "        expect: ['x']"
+            ).joinToString(nl)
+        )
         val config = ConfigParser.parse(File(dir, "config.yaml").readText())
         val testCase = config.tasks.values.first().testcase.first()
         // 学生ごとに、元の提出ディレクトリと展開したソースを作る
@@ -136,19 +160,69 @@ class NavigationUiTest {
             }
             val workspace = File(dir, "workspace/s$n").apply { mkdirs() }
             File(workspace, "sources").mkdirs()
-            File(workspace, "sources/Main$n.java").writeText("// 課題1" + nl + "public class Main$n {}" + nl)
+            File(
+                workspace,
+                "sources/Main$n.java"
+            ).writeText("// 課題1" + nl + "public class Main$n {}" + nl)
             Student(StudentId("s$n"), "学生$n", workspace.path, submission.path)
         }
         val compiled = students.mapIndexed { i, st ->
             CompiledSource(
-                SourceFile(st.id, File(st.workspaceDir, "sources/Main${i + 1}.java").absolutePath, "${st.id}/sources/Main${i + 1}.java"),
+                SourceFile(
+                    st.id,
+                    File(st.workspaceDir, "sources/Main${i + 1}.java").absolutePath,
+                    "${st.id}/sources/Main${i + 1}.java"
+                ),
                 CompileOutcome.Success("javac", SourceEncoding.UTF8, null, "Main${i + 1}", ""),
             )
         }
-        val results = compiled.mapIndexed { i, c -> TestResult(i, c.source, c.outcome, TaskName("課題1"), testCase, Judge.AC) }
-        val outcome = GradingOutcome(config, File(dir, "workspace").path, LastStep.Test, students, compiled, results)
+        // 学生1 には、課題を特定できない (NF) ソースもある
+        File(
+            students[0].workspaceDir,
+            "sources/Other1.java"
+        ).writeText("public class Other1 {}" + nl)
+        val other = CompiledSource(
+            SourceFile(
+                students[0].id,
+                File(students[0].workspaceDir, "sources/Other1.java").absolutePath,
+                "s1/sources/Other1.java"
+            ),
+            CompileOutcome.Success(
+                "javac",
+                SourceEncoding.UTF8,
+                null,
+                "Other1",
+                students[0].workspaceDir
+            ),
+        )
+        val results = compiled.mapIndexed { i, c ->
+            TestResult(
+                i,
+                c.source,
+                c.outcome,
+                TaskName("課題1"),
+                testCase,
+                Judge.AC
+            )
+        } +
+                TestResult(2, other.source, other.outcome, null, null, Judge.NF)
+        val outcome = GradingOutcome(
+            config,
+            File(dir, "workspace").path,
+            LastStep.Test,
+            students,
+            compiled + other,
+            results
+        )
         val project = File(dir, "test.taa")
-        project.writeBytes(ProjectCodec.encode(ProjectFile(settings = ProjectSettings(configPath = "config.yaml"), outcome = outcome)))
+        project.writeBytes(
+            ProjectCodec.encode(
+                ProjectFile(
+                    settings = ProjectSettings(configPath = "config.yaml"),
+                    outcome = outcome
+                )
+            )
+        )
         val owner = object : ViewModelStoreOwner {
             override val viewModelStore = ViewModelStore()
         }
@@ -168,26 +242,60 @@ class NavigationUiTest {
         onNode(hasText("学生のページ")).performClick()
         val back = hasContentDescription("採点画面に戻る (Esc)")
         waitUntil(timeoutMillis = 10_000) { exists(back) }
-        waitUntil(timeoutMillis = 10_000) { exists(hasText("提出ファイル (1)")) && exists(hasText("展開したソース (1)")) }
         assertTrue(exists(hasText("s1  学生1")))
+
+        // 「結果」タブ: 詳細タブと同じ一覧 (1人分なので学生の見出しは出さない)
+        waitUntil(timeoutMillis = 10_000) { exists(hasText("結果 (2)")) }
+        assertFalse(exists(openStudent))
+        assertFalse(
+            exists(hasText("学生のページ")),
+            "学生のページの中では「学生のページ」ボタンを出さない"
+        )
+
+        // 課題を特定できないソースに、課題を割り当てる (その場でテストを実行する)
+        onNode(hasText("課題を特定できません")).performClick()
+        waitUntil(timeoutMillis = 10_000) { exists(hasText("課題を割り当て")) }
+        onNode(hasText("課題を割り当て")).performClick()
+        val menuItem = hasText("課題1").and(hasAnyAncestor(isPopup()))
+        waitUntil(timeoutMillis = 10_000) { exists(menuItem) }
+        onNode(menuItem).performClick()
+        waitUntil(timeoutMillis = 30_000) { exists(hasText("割り当てを解除")) }
+        assertTrue(exists(hasText("(割り当て)")))
+        assertFalse(exists(hasText("課題を特定できません")))
+        // 解除すると NF に戻る
+        onNode(hasText("割り当てを解除")).performClick()
+        waitUntil(timeoutMillis = 10_000) {
+            exists(hasText("課題を特定できません")) && !exists(
+                hasText("割り当てを解除")
+            )
+        }
+
+        // 「提出ファイル」タブ
+        onNode(hasText("提出ファイル", substring = true)).performClick()
+        waitUntil(timeoutMillis = 10_000) { exists(hasText("提出ファイル (1)")) && exists(hasText("展開したソース (2)")) }
         assertTrue(exists(hasText("submit1.zip")))
         // 展開したソースの中身を表示している
-        waitUntil(timeoutMillis = 10_000) { exists(hasText("public class Main1", substring = true)) }
+        waitUntil(timeoutMillis = 10_000) {
+            exists(
+                hasText(
+                    "public class Main1",
+                    substring = true
+                )
+            )
+        }
         // zip は中の階層を表示する
         onNode(hasText("submit1.zip")).performClick()
-        waitUntil(timeoutMillis = 10_000) { exists(hasText("kadai/", substring = true)) && exists(hasText("Main1.java", substring = true)) }
+        waitUntil(timeoutMillis = 10_000) {
+            exists(hasText("kadai/", substring = true)) && exists(
+                hasText("Main1.java", substring = true)
+            )
+        }
 
         // 次の学生へ
         onNode(hasText("次の学生")).performClick()
-        waitUntil(timeoutMillis = 10_000) { exists(hasText("s2  学生2")) && exists(hasText("submit2.zip")) }
+        waitUntil(timeoutMillis = 10_000) { exists(hasText("s2  学生2")) && exists(hasText("結果 (1)")) }
 
-        // テストケースの判定をクリックすると、詳細タブでその結果を開く
-        onNode(hasText("t1")).performClick()
-        waitUntil(timeoutMillis = 10_000) { !exists(back) && exists(hasText("s2/sources/Main2.java")) }
-
-        // もう一度開いて Esc で戻る
-        onAllNodes(openStudent)[0].performClick()
-        waitUntil(timeoutMillis = 10_000) { exists(back) }
+        // Esc で戻る
         onRoot().performKeyInput { pressKey(Key.Escape) }
         waitUntil(timeoutMillis = 10_000) { !exists(back) }
     }
@@ -195,14 +303,33 @@ class NavigationUiTest {
     @Test
     fun savesAsAndDuplicatesProject() = runComposeUiTest {
         val nl = Char(10).toString()
-        File(dir, "config.yaml").writeText(listOf("version: 2", "tasks:", "  課題1:", "    word: [課題1]").joinToString(nl))
+        File(dir, "config.yaml").writeText(
+            listOf(
+                "version: 2",
+                "tasks:",
+                "  課題1:",
+                "    word: [課題1]"
+            ).joinToString(nl)
+        )
         File(dir, "submissions").mkdirs()
         val config = ConfigParser.parse(File(dir, "config.yaml").readText())
-        val outcome = GradingOutcome(config, "", LastStep.Test, listOf(Student(StudentId("s1"), "学生1", "")), emptyList(), emptyList())
+        val outcome = GradingOutcome(
+            config,
+            "",
+            LastStep.Test,
+            listOf(Student(StudentId("s1"), "学生1", "")),
+            emptyList(),
+            emptyList()
+        )
         val project = File(dir, "第1回.taa")
         project.writeBytes(
             ProjectCodec.encode(
-                ProjectFile(settings = ProjectSettings(rootDir = "submissions", configPath = "config.yaml"), outcome = outcome),
+                ProjectFile(
+                    settings = ProjectSettings(
+                        rootDir = "submissions",
+                        configPath = "config.yaml"
+                    ), outcome = outcome
+                ),
             ),
         )
         val owner = object : ViewModelStoreOwner {
@@ -229,7 +356,10 @@ class NavigationUiTest {
         val copied = ProjectCodec.decode(settingsOnly.readBytes())
         assertNull(copied.outcome)
         // 保存先が変わるので、相対パスは新しい場所を基準に作り直す (フォルダの外になるので絶対パス)
-        assertEquals(File(dir, "config.yaml").absolutePath, File(copied.settings.configPath).absolutePath)
+        assertEquals(
+            File(dir, "config.yaml").absolutePath,
+            File(copied.settings.configPath).absolutePath
+        )
         assertTrue(exists(hasText("第1回")))
 
         // 複製: 結果も含める

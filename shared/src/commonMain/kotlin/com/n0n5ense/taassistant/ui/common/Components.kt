@@ -89,7 +89,12 @@ fun JudgeBadge(judge: Judge, modifier: Modifier = Modifier, manual: Boolean = fa
                 fontFamily = FontFamily.Monospace,
             )
             if (manual) {
-                Icon(Icons.Filled.Edit, contentDescription = "手動判定", tint = foreground, modifier = Modifier.size(10.dp))
+                Icon(
+                    Icons.Filled.Edit,
+                    contentDescription = "手動判定",
+                    tint = foreground,
+                    modifier = Modifier.size(10.dp)
+                )
             }
         }
     }
@@ -115,7 +120,10 @@ fun PathField(
     hint: String? = null,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
             OutlinedTextField(
                 value = value,
                 onValueChange = onValueChange,
@@ -143,7 +151,12 @@ fun RadioRow(label: String, selected: Boolean, enabled: Boolean, onClick: () -> 
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .selectable(selected = selected, enabled = enabled, role = Role.RadioButton, onClick = onClick)
+            .selectable(
+                selected = selected,
+                enabled = enabled,
+                role = Role.RadioButton,
+                onClick = onClick
+            )
             .padding(vertical = 2.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -154,11 +167,21 @@ fun RadioRow(label: String, selected: Boolean, enabled: Boolean, onClick: () -> 
 }
 
 @Composable
-fun CheckRow(label: String, checked: Boolean, enabled: Boolean, onCheckedChange: (Boolean) -> Unit) {
+fun CheckRow(
+    label: String,
+    checked: Boolean,
+    enabled: Boolean,
+    onCheckedChange: (Boolean) -> Unit
+) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .toggleable(value = checked, enabled = enabled, role = Role.Checkbox, onValueChange = onCheckedChange)
+            .toggleable(
+                value = checked,
+                enabled = enabled,
+                role = Role.Checkbox,
+                onValueChange = onCheckedChange
+            )
             .padding(vertical = 2.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -170,7 +193,12 @@ fun CheckRow(label: String, checked: Boolean, enabled: Boolean, onCheckedChange:
 
 /** ラベル付きの等幅テキストブロック (選択・コピー可能) */
 @Composable
-fun TextBlock(title: String, text: String, modifier: Modifier = Modifier, emptyText: String = "(なし)") {
+fun TextBlock(
+    title: String,
+    text: String,
+    modifier: Modifier = Modifier,
+    emptyText: String = "(なし)"
+) {
     Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Text(title, style = MaterialTheme.typography.labelLarge)
         Surface(
@@ -216,11 +244,33 @@ internal fun OverflowMenu(description: String, entries: List<MenuEntry>) {
         TooltipIconButton(description, Icons.Filled.MoreVert, onClick = { open = true })
         DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
             entries.forEach { entry ->
-                val color = if (entry.destructive) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
+                val color =
+                    if (entry.destructive) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
                 DropdownMenuItem(
-                    text = { Text(entry.label, color = if (entry.enabled) color else color.copy(alpha = 0.38f)) },
-                    leadingIcon = entry.icon?.let { icon -> { Icon(icon, contentDescription = null, tint = if (entry.enabled) color else color.copy(alpha = 0.38f)) } },
-                    trailingIcon = entry.shortcut?.let { { Text(it, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) } },
+                    text = {
+                        Text(
+                            entry.label,
+                            color = if (entry.enabled) color else color.copy(alpha = 0.38f)
+                        )
+                    },
+                    leadingIcon = entry.icon?.let { icon ->
+                        {
+                            Icon(
+                                icon,
+                                contentDescription = null,
+                                tint = if (entry.enabled) color else color.copy(alpha = 0.38f)
+                            )
+                        }
+                    },
+                    trailingIcon = entry.shortcut?.let {
+                        {
+                            Text(
+                                it,
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    },
                     enabled = entry.enabled,
                     onClick = {
                         open = false
@@ -235,13 +285,23 @@ internal fun OverflowMenu(description: String, entries: List<MenuEntry>) {
 /** アイコンだけのボタンには、何をするかをツールチップで示す */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-internal fun TooltipIconButton(tooltip: String, icon: ImageVector, onClick: () -> Unit, enabled: Boolean = true) {
+internal fun TooltipIconButton(
+    tooltip: String,
+    icon: ImageVector,
+    onClick: () -> Unit,
+    enabled: Boolean = true
+) {
     TooltipBox(
         positionProvider = TooltipDefaults.rememberTooltipPositionProvider(TooltipAnchorPosition.Above),
         tooltip = { PlainTooltip { Text(tooltip) } },
         state = rememberTooltipState(),
     ) {
-        IconButton(onClick = onClick, enabled = enabled) { Icon(icon, contentDescription = tooltip) }
+        IconButton(onClick = onClick, enabled = enabled) {
+            Icon(
+                icon,
+                contentDescription = tooltip
+            )
+        }
     }
 }
 
@@ -262,7 +322,11 @@ fun List<TestResult>.interventionsByStudent(): Map<StudentId, Intervention> =
 @Composable
 fun InterventionMarks(intervention: Intervention?, modifier: Modifier = Modifier) {
     if (intervention == null || !intervention.any) return
-    Row(modifier, horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
+    Row(
+        modifier,
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
         if (intervention.manualJudges > 0) {
             MarkChip(
                 "手動 ${intervention.manualJudges}",
@@ -285,7 +349,13 @@ fun InterventionMarks(intervention: Intervention?, modifier: Modifier = Modifier
 }
 
 @Composable
-private fun MarkChip(text: String, icon: ImageVector, container: Color, content: Color, description: String) {
+private fun MarkChip(
+    text: String,
+    icon: ImageVector,
+    container: Color,
+    content: Color,
+    description: String
+) {
     Surface(
         color = container,
         contentColor = content,
@@ -298,7 +368,13 @@ private fun MarkChip(text: String, icon: ImageVector, container: Color, content:
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Icon(icon, contentDescription = null, modifier = Modifier.size(11.dp))
-            Text(text, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, softWrap = false)
+            Text(
+                text,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                softWrap = false
+            )
         }
     }
 }

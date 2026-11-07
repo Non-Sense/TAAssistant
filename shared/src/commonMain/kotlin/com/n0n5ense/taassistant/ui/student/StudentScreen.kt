@@ -26,14 +26,14 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.Surface
+import androidx.compose.material3.SecondaryTabRow
+import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.VerticalDivider
@@ -42,6 +42,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -67,35 +68,44 @@ import com.n0n5ense.taassistant.core.model.CompileOutcome
 import com.n0n5ense.taassistant.core.model.Judge
 import com.n0n5ense.taassistant.core.model.Student
 import com.n0n5ense.taassistant.core.model.TestResult
-import com.n0n5ense.taassistant.core.model.encoding
-import com.n0n5ense.taassistant.core.report.buildSummary
 import com.n0n5ense.taassistant.ui.common.AppHorizontalScrollbar
 import com.n0n5ense.taassistant.ui.common.AppVerticalScrollbar
 import com.n0n5ense.taassistant.ui.common.InterventionMarks
 import com.n0n5ense.taassistant.ui.common.JudgeBadge
 import com.n0n5ense.taassistant.ui.common.TooltipIconButton
 import com.n0n5ense.taassistant.ui.common.interventionsByStudent
+import com.n0n5ense.taassistant.ui.main.AppViewModel
+import com.n0n5ense.taassistant.ui.main.UiState
+import com.n0n5ense.taassistant.ui.results.KeyHint
+import com.n0n5ense.taassistant.ui.results.ResultBrowser
+import com.n0n5ense.taassistant.ui.results.groupResults
+
+/** 学生のページのタブ */
+private enum class StudentTab(val label: String) {
+    Results("結果"),
+    Files("提出ファイル"),
+}
 
 /**
- * 学生のページ。課題ごとの結果と、提出ファイルの一覧・中身を表示する。
+ * 学生のページ。結果 (手動判定・課題の割り当て) と、提出ファイルの一覧・中身を表示する。
  *
- * @param results 手動判定・課題の割り当てを反映した全員分の結果
- * @param onOpenResult 結果を選んで、詳細タブで開く
  * @param onPrevious / [onNext] 前後の学生のページに切り替える (いなければ null)
  */
 @Composable
 internal fun StudentScreen(
     student: Student,
-    outcome: GradingOutcome,
-    results: List<TestResult>,
+    state: UiState,
+    appViewModel: AppViewModel,
     viewModel: StudentViewModel,
     onBack: () -> Unit,
-    onOpenResult: (Int) -> Unit,
     onPrevious: (() -> Unit)?,
     onNext: (() -> Unit)?,
 ) {
+    val outcome = state.outcome ?: return
     val page by viewModel.state.collectAsStateWithLifecycle()
-    val studentResults = remember(results, student.id) { results.filter { it.studentId == student.id } }
+    val studentResults =
+        remember(state.results, student.id) { state.results.filter { it.studentId == student.id } }
+    var tab by rememberSaveable { mutableStateOf(StudentTab.Results) }
 
     // Esc で戻れるよう、ページにフォーカスを置く
     val focus = remember { FocusRequester() }
@@ -115,22 +125,60 @@ internal fun StudentScreen(
                 }
             },
     ) {
-        StudentTopBar(student, studentResults, results, onBack, onPrevious, onNext)
-        HorizontalDivider()
-        Row(Modifier.weight(1f).fillMaxWidth()) {
-            val scroll = rememberScrollState()
-            Box(Modifier.width(460.dp).fillMaxHeight()) {
-                Column(
-                    Modifier.fillMaxSize().verticalScroll(scroll).padding(vertical = 16.dp),
-                    verticalArrangement = Arrangement.spacedBy(24.dp),
-                ) {
-                    TaskResultsSection(student, outcome, results, studentResults, onOpenResult)
-                    FilesSection(page, outcome, studentResults, viewModel)
+        StudentTopBar(student, studentResults, state.results, onBack, onPrevious, onNext)
+        SecondaryTabRow(selectedTabIndex = tab.ordinal) {
+            StudentTab.entries.forEach { t ->
+                val count = when (t) {
+                    StudentTab.Results -> studentResults.size
+                    StudentTab.Files -> page.files?.let { it.submitted.size + it.extracted.size }
                 }
-                AppVerticalScrollbar(scroll, Modifier.align(Alignment.CenterEnd).fillMaxHeight())
+                Tab(
+                    selected = tab == t,
+                    onClick = { tab = t },
+                    text = { Text(t.label + (count?.let { " ($it)" } ?: "")) },
+                )
             }
-            VerticalDivider()
-            FilePreviewPane(page, viewModel, Modifier.weight(1f).fillMaxHeight())
+        }
+        when (tab) {
+            // 詳細タブと同じ一覧・詳細 (課題の割り当て・手動判定もここでできる)
+            StudentTab.Results -> Column(Modifier.weight(1f).fillMaxWidth()) {
+                if (studentResults.isEmpty()) {
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Text("結果がありません", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    return@Column
+                }
+                KeyHint(Modifier.padding(top = 6.dp))
+                HorizontalDivider(Modifier.padding(top = 6.dp))
+                val groups =
+                    remember(outcome, studentResults) { groupResults(outcome, studentResults) }
+                ResultBrowser(
+                    state = state,
+                    viewModel = appViewModel,
+                    groups = groups,
+                    showStudentHeaders = false,
+                    onOpenStudent = null,
+                    modifier = Modifier.weight(1f).fillMaxWidth(),
+                )
+            }
+
+            StudentTab.Files -> Row(Modifier.weight(1f).fillMaxWidth()) {
+                val scroll = rememberScrollState()
+                Box(Modifier.width(460.dp).fillMaxHeight()) {
+                    Column(
+                        Modifier.fillMaxSize().verticalScroll(scroll).padding(vertical = 16.dp),
+                        verticalArrangement = Arrangement.spacedBy(24.dp),
+                    ) {
+                        FilesSection(page, outcome, studentResults, viewModel)
+                    }
+                    AppVerticalScrollbar(
+                        scroll,
+                        Modifier.align(Alignment.CenterEnd).fillMaxHeight()
+                    )
+                }
+                VerticalDivider()
+                FilePreviewPane(page, viewModel, Modifier.weight(1f).fillMaxHeight())
+            }
         }
     }
 }
@@ -153,92 +201,52 @@ private fun StudentTopBar(
     ) {
         TooltipIconButton("採点画面に戻る (Esc)", Icons.AutoMirrored.Filled.ArrowBack, onBack)
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
                 Text(
                     "${student.id}  ${student.name}",
                     style = MaterialTheme.typography.titleLarge,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
-                val intervention = remember(allResults, student.id) { allResults.interventionsByStudent()[student.id] }
+                val intervention = remember(
+                    allResults,
+                    student.id
+                ) { allResults.interventionsByStudent()[student.id] }
                 InterventionMarks(intervention)
             }
             val counts = studentResults.groupingBy { it.judge }.eachCount()
-            Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
                 if (counts.isEmpty()) {
-                    Text("結果がありません", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(
+                        "結果がありません",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
                 Judge.entries.filter { it in counts }.forEach { judge ->
                     JudgeBadge(judge)
-                    Text("${counts[judge]}", style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(end = 4.dp))
-                }
-            }
-        }
-        OutlinedButton(onClick = { onPrevious?.invoke() }, enabled = onPrevious != null) { Text("前の学生") }
-        OutlinedButton(onClick = { onNext?.invoke() }, enabled = onNext != null) { Text("次の学生") }
-    }
-}
-
-// ---------------------------------------------------------------- 課題ごとの結果
-
-@Composable
-private fun TaskResultsSection(
-    student: Student,
-    outcome: GradingOutcome,
-    allResults: List<TestResult>,
-    studentResults: List<TestResult>,
-    onOpenResult: (Int) -> Unit,
-) {
-    val summary = remember(outcome, allResults, student.id) {
-        buildSummary(outcome.config, listOf(student), allResults.filter { it.studentId == student.id })
-    }
-    val row = summary.rows.firstOrNull { it.studentId == student.id }
-    Section("課題ごとの結果") {
-        if (row == null || summary.taskNames.isEmpty()) {
-            EmptyText("結果がありません")
-            return@Section
-        }
-        summary.taskNames.forEachIndexed { index, task ->
-            val columns = summary.columns.withIndex().filter { it.value.taskName == task }
-            Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(task.name, style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
                     Text(
-                        "${row.acceptRatios[index]}%",
-                        style = MaterialTheme.typography.labelLarge,
-                        color = MaterialTheme.colorScheme.primary,
+                        "${counts[judge]}",
+                        style = MaterialTheme.typography.labelSmall,
+                        modifier = Modifier.padding(end = 4.dp)
                     )
                 }
-                // テストケースごとの判定。クリックでその結果を開く
-                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    columns.forEach { (columnIndex, column) ->
-                        val judge = row.stats[columnIndex]
-                        val target = studentResults.firstOrNull { it.taskName == task && it.testCase == column.testCase }
-                            ?: studentResults.firstOrNull { it.taskName == task }
-                        Row(
-                            Modifier
-                                .background(MaterialTheme.colorScheme.surfaceContainerHigh, MaterialTheme.shapes.small)
-                                .clickable(enabled = target != null) { target?.let { onOpenResult(it.id) } }
-                                .padding(horizontal = 6.dp, vertical = 4.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(4.dp),
-                        ) {
-                            JudgeBadge(judge, manual = target?.manualJudge != null)
-                            Text(column.testCase.name, style = MaterialTheme.typography.labelSmall)
-                        }
-                    }
-                }
             }
         }
-        val notFound = studentResults.filter { it.taskName == null }
-        if (notFound.isNotEmpty()) {
-            Text(
-                "課題を特定できなかったソース ${notFound.size} 件 (下の「展開したソース」で NF と表示)",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(horizontal = 16.dp),
-            )
-        }
+        OutlinedButton(
+            onClick = { onPrevious?.invoke() },
+            enabled = onPrevious != null
+        ) { Text("前の学生") }
+        OutlinedButton(
+            onClick = { onNext?.invoke() },
+            enabled = onNext != null
+        ) { Text("次の学生") }
     }
 }
 
@@ -263,18 +271,31 @@ private fun FilesSection(
             Text("ファイルを読み込んでいます…", style = MaterialTheme.typography.bodySmall)
         }
 
-        page.error != null -> Text(page.error, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(horizontal = 16.dp))
+        page.error != null -> Text(
+            page.error,
+            color = MaterialTheme.colorScheme.error,
+            modifier = Modifier.padding(horizontal = 16.dp)
+        )
 
         files != null -> {
             Section(
                 "提出ファイル (${files.submitted.size})",
-                trailing = { TooltipIconButton("一覧を更新", Icons.Filled.Refresh, viewModel::reload) },
+                trailing = {
+                    TooltipIconButton(
+                        "一覧を更新",
+                        Icons.Filled.Refresh,
+                        viewModel::reload
+                    )
+                },
             ) {
                 if (files.submitted.isEmpty()) {
                     EmptyText("元の提出ディレクトリが分かりません (再実行すると表示されます)")
                 }
                 files.submitted.forEach { file ->
-                    FileRow(file, selected = page.selectedFile == file, onClick = { viewModel.selectFile(file) })
+                    FileRow(
+                        file,
+                        selected = page.selectedFile == file,
+                        onClick = { viewModel.selectFile(file) })
                 }
             }
             Section("展開したソース (${files.extracted.size})") {
@@ -317,7 +338,11 @@ private fun FileRow(
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f),
             )
-            Text(formatSize(file.size), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(
+                formatSize(file.size),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         }
         details?.invoke()
     }
@@ -327,16 +352,24 @@ private fun FileRow(
 @Composable
 private fun SourceDetails(compile: CompileOutcome?, results: List<TestResult>) {
     if (compile == null && results.isEmpty()) {
-        Text("採点していません", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(
+            "採点していません",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
         return
     }
-    Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
         when (compile) {
             is CompileOutcome.Success -> Text(
                 "コンパイル成功 (${compile.encoding.charsetName}${compile.packageName?.let { ", package $it" } ?: ""})",
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+
             is CompileOutcome.Failure -> JudgeBadge(Judge.CE)
             is CompileOutcome.Error -> JudgeBadge(Judge.IE)
             null -> Unit
@@ -357,12 +390,19 @@ private fun SourceDetails(compile: CompileOutcome?, results: List<TestResult>) {
 // ---------------------------------------------------------------- ファイルの中身
 
 @Composable
-private fun FilePreviewPane(page: StudentPageState, viewModel: StudentViewModel, modifier: Modifier) {
+private fun FilePreviewPane(
+    page: StudentPageState,
+    viewModel: StudentViewModel,
+    modifier: Modifier
+) {
     val file = page.selectedFile
     Column(modifier) {
         if (file == null) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Text("左の一覧からファイルを選択してください", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(
+                    "左の一覧からファイルを選択してください",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
             return@Column
         }
@@ -371,7 +411,12 @@ private fun FilePreviewPane(page: StudentPageState, viewModel: StudentViewModel,
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Column(Modifier.weight(1f)) {
-                Text(file.fileName, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(
+                    file.fileName,
+                    style = MaterialTheme.typography.titleMedium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
                 Text(
                     file.path,
                     style = MaterialTheme.typography.bodySmall,
@@ -381,15 +426,23 @@ private fun FilePreviewPane(page: StudentPageState, viewModel: StudentViewModel,
                 )
             }
             TextButton(onClick = { viewModel.openPath(file.path) }) { Text("開く") }
-            TextButton(onClick = { viewModel.parentDirectory(file.path)?.let(viewModel::openPath) }) { Text("フォルダを開く") }
+            TextButton(onClick = {
+                viewModel.parentDirectory(file.path)?.let(viewModel::openPath)
+            }) { Text("フォルダを開く") }
         }
         HorizontalDivider()
         when (val preview = page.preview) {
-            null, FilePreview.Loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            null, FilePreview.Loading -> Box(
+                Modifier.fillMaxSize(),
+                contentAlignment = Alignment.Center
+            ) {
                 CircularProgressIndicator()
             }
 
-            is FilePreview.Unavailable -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            is FilePreview.Unavailable -> Box(
+                Modifier.fillMaxSize(),
+                contentAlignment = Alignment.Center
+            ) {
                 Text(preview.reason, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
 
@@ -463,14 +516,26 @@ private fun buildArchiveTree(listing: ArchiveListing): List<ArchiveNode> {
     fun dir(path: String): ArchiveNode = dirs.getOrPut(path) {
         val parent = dir(path.substringBeforeLast('/', ""))
         val entry = ArchiveEntry(path, 0, isDirectory = true)
-        ArchiveNode(path.substringAfterLast('/'), path, true, 0, entry.isExcludedOnExtract()).also { parent.children += it }
+        ArchiveNode(
+            path.substringAfterLast('/'),
+            path,
+            true,
+            0,
+            entry.isExcludedOnExtract()
+        ).also { parent.children += it }
     }
     listing.entries.forEach { entry ->
         if (entry.isDirectory) {
             dir(entry.path)
         } else {
             val parent = dir(entry.path.substringBeforeLast('/', ""))
-            parent.children += ArchiveNode(entry.name, entry.path, false, entry.size, entry.isExcludedOnExtract())
+            parent.children += ArchiveNode(
+                entry.name,
+                entry.path,
+                false,
+                entry.size,
+                entry.isExcludedOnExtract()
+            )
         }
     }
     fun sort(node: ArchiveNode) {
@@ -501,23 +566,36 @@ private fun ArchiveView(listing: ArchiveListing, modifier: Modifier) {
     val excludedCount = listing.entries.count { !it.isDirectory && it.isExcludedOnExtract() }
     Column(modifier) {
         // 概要と注意
-        Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        Column(
+            Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(2.dp)
+        ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    "${listing.format.label} · ${listing.fileCount} ファイル · 合計 ${formatSize(listing.totalSize)} (展開後)" +
-                        if (listing.truncated) " · 項目が多いため途中まで表示" else "",
+                    "${listing.format.label} · ${listing.fileCount} ファイル · 合計 ${
+                        formatSize(
+                            listing.totalSize
+                        )
+                    } (展開後)" +
+                            if (listing.truncated) " · 項目が多いため途中まで表示" else "",
                     style = MaterialTheme.typography.labelMedium,
                     modifier = Modifier.weight(1f),
                 )
                 val dirPaths = remember(tree) {
                     buildList {
-                        fun walk(nodes: List<ArchiveNode>): Unit = nodes.forEach { if (it.isDirectory) { add(it.path); walk(it.children) } }
+                        fun walk(nodes: List<ArchiveNode>): Unit = nodes.forEach {
+                            if (it.isDirectory) {
+                                add(it.path); walk(it.children)
+                            }
+                        }
                         walk(tree)
                     }
                 }
                 if (dirPaths.isNotEmpty()) {
                     val allCollapsed = collapsed.containsAll(dirPaths)
-                    TextButton(onClick = { collapsed = if (allCollapsed) emptySet() else dirPaths.toSet() }) {
+                    TextButton(onClick = {
+                        collapsed = if (allCollapsed) emptySet() else dirPaths.toSet()
+                    }) {
                         Text(if (allCollapsed) "すべて開く" else "すべて閉じる")
                     }
                 }
@@ -528,6 +606,7 @@ private fun ArchiveView(listing: ArchiveListing, modifier: Modifier) {
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.tertiary,
                 )
+
                 excludedCount > 0 -> Text(
                     "薄く表示しているファイル ($excludedCount 件) は採点時に展開されません (__MACOSX と .class)",
                     style = MaterialTheme.typography.bodySmall,
@@ -544,15 +623,22 @@ private fun ArchiveView(listing: ArchiveListing, modifier: Modifier) {
         }
         val listState = rememberLazyListState()
         Box(Modifier.weight(1f).fillMaxWidth()) {
-            LazyColumn(Modifier.fillMaxSize(), state = listState, contentPadding = PaddingValues(vertical = 4.dp)) {
-                items(visible, key = { it.node.path + if (it.node.isDirectory) "/" else "" }) { item ->
+            LazyColumn(
+                Modifier.fillMaxSize(),
+                state = listState,
+                contentPadding = PaddingValues(vertical = 4.dp)
+            ) {
+                items(
+                    visible,
+                    key = { it.node.path + if (it.node.isDirectory) "/" else "" }) { item ->
                     ArchiveRow(
                         item = item,
                         collapsed = item.node.path in collapsed,
                         dimmed = item.node.excluded || !listing.format.extractedOnGrading,
                         onToggle = {
                             val path = item.node.path
-                            collapsed = if (path in collapsed) collapsed - path else collapsed + path
+                            collapsed =
+                                if (path in collapsed) collapsed - path else collapsed + path
                         },
                     )
                 }
@@ -563,9 +649,15 @@ private fun ArchiveView(listing: ArchiveListing, modifier: Modifier) {
 }
 
 @Composable
-private fun ArchiveRow(item: VisibleNode, collapsed: Boolean, dimmed: Boolean, onToggle: () -> Unit) {
+private fun ArchiveRow(
+    item: VisibleNode,
+    collapsed: Boolean,
+    dimmed: Boolean,
+    onToggle: () -> Unit
+) {
     val node = item.node
-    val color = if (dimmed) MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f) else MaterialTheme.colorScheme.onSurface
+    val color =
+        if (dimmed) MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f) else MaterialTheme.colorScheme.onSurface
     Row(
         Modifier
             .fillMaxWidth()
@@ -598,7 +690,9 @@ private fun ArchiveRow(item: VisibleNode, collapsed: Boolean, dimmed: Boolean, o
             Text("展開しない", style = MaterialTheme.typography.labelSmall, color = color)
         }
         Text(
-            if (node.isDirectory) "${node.fileCount} 件 · ${formatSize(node.totalSize)}" else formatSize(node.size),
+            if (node.isDirectory) "${node.fileCount} 件 · ${formatSize(node.totalSize)}" else formatSize(
+                node.size
+            ),
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -608,10 +702,21 @@ private fun ArchiveRow(item: VisibleNode, collapsed: Boolean, dimmed: Boolean, o
 // ---------------------------------------------------------------- 部品
 
 @Composable
-private fun Section(title: String, trailing: @Composable () -> Unit = {}, content: @Composable () -> Unit) {
+private fun Section(
+    title: String,
+    trailing: @Composable () -> Unit = {},
+    content: @Composable () -> Unit
+) {
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text(title, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+        Row(
+            Modifier.fillMaxWidth().padding(start = 16.dp, end = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                title,
+                style = MaterialTheme.typography.titleMedium,
+                modifier = Modifier.weight(1f)
+            )
             trailing()
         }
         content()

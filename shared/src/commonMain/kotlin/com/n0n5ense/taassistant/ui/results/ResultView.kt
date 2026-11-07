@@ -11,7 +11,9 @@ enum class ResultFilter(val label: String, val accepts: (TestResult) -> Boolean)
     NeedsReview("要確認", { it.judge in Judge.needsReview }),
     Executed("実行したもの", { it.execution != null }),
     Manual("手動判定・割り当て", { it.manualJudge != null || it.assigned }),
-    NotRun("NF / CE / IE", { it.judge == Judge.NF || it.judge == Judge.CE || it.judge == Judge.IE }),
+    NotRun(
+        "NF / CE / IE",
+        { it.judge == Judge.NF || it.judge == Judge.CE || it.judge == Judge.IE }),
 }
 
 /** 学生の中の、課題ごとのまとまり (課題を特定できなかった結果は [taskName] = null) */
@@ -30,5 +32,8 @@ data class ResultViewState(
 ) {
     /** [result] が見えるように、その学生と課題を開く */
     fun reveal(result: TestResult): ResultViewState =
-        copy(collapsed = collapsed - result.studentId, collapsedTasks = collapsedTasks - result.taskGroupKey)
+        copy(
+            collapsed = collapsed - result.studentId,
+            collapsedTasks = collapsedTasks - result.taskGroupKey
+        )
 }

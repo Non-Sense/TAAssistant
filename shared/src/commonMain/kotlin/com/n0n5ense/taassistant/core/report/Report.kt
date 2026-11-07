@@ -48,17 +48,48 @@ data class DetailRow(
 ) {
     /** 各セルの値。String / Double / null(空セル) */
     fun cells(): List<Any?> = listOf(
-        studentId, studentName, sourcePath, taskName, testCaseName, arg, input, stat.label, timeMillis,
-        expect, stdout, stderr, compileError, packageName, className, runCommand, compileCommand,
+        studentId,
+        studentName,
+        sourcePath,
+        taskName,
+        testCaseName,
+        arg,
+        input,
+        stat.label,
+        timeMillis,
+        expect,
+        stdout,
+        stderr,
+        compileError,
+        packageName,
+        className,
+        runCommand,
+        compileCommand,
     )
 
     companion object {
         val header: List<String> = listOf(
-            "studentID", "studentName", "sourcePath", "taskName", "testCase", "arg", "input", "stat", "time(ms)",
-            "expect", "stdout", "stderr", "compileError", "package", "class", "runCommand", "compileCommand",
+            "studentID",
+            "studentName",
+            "sourcePath",
+            "taskName",
+            "testCase",
+            "arg",
+            "input",
+            "stat",
+            "time(ms)",
+            "expect",
+            "stdout",
+            "stderr",
+            "compileError",
+            "package",
+            "class",
+            "runCommand",
+            "compileCommand",
         )
         val statColumn: Int = header.indexOf("stat")
-        val wrapColumns: Set<Int> = setOf("stdout", "stderr", "compileError").map(header::indexOf).toSet()
+        val wrapColumns: Set<Int> =
+            setOf("stdout", "stderr", "compileError").map(header::indexOf).toSet()
 
         fun of(result: TestResult, studentNames: Map<StudentId, String>): DetailRow {
             val compile = result.compile
@@ -128,10 +159,12 @@ data class SummaryTable(
  */
 fun buildSummary(config: Config, students: List<Student>, results: List<TestResult>): SummaryTable {
     val taskNames = config.tasks.keys.toList()
-    val columns = config.tasks.flatMap { (name, task) -> task.testcase.map { SummaryColumn(name, it) } }
+    val columns =
+        config.tasks.flatMap { (name, task) -> task.testcase.map { SummaryColumn(name, it) } }
     val names = students.associate { it.id to it.name }
     val resultsByStudent = results.groupBy { it.studentId }
-    val studentIds = (students.map { it.id } + resultsByStudent.keys).distinct().sortedBy { it.value }
+    val studentIds =
+        (students.map { it.id } + resultsByStudent.keys).distinct().sortedBy { it.value }
 
     val rows = studentIds.map { id ->
         val byKey = resultsByStudent[id].orEmpty().groupBy { it.taskName to it.testCase }
@@ -144,7 +177,8 @@ fun buildSummary(config: Config, students: List<Student>, results: List<TestResu
                 0
             } else {
                 val accepted = taskColumns.count { column ->
-                    byKey[column.taskName to column.testCase].orEmpty().count { it.judge == Judge.AC } == 1
+                    byKey[column.taskName to column.testCase].orEmpty()
+                        .count { it.judge == Judge.AC } == 1
                 }
                 accepted * 100 / taskColumns.size
             }
@@ -174,7 +208,10 @@ object Csv {
     fun summary(table: SummaryTable): String = buildString {
         append(line(table.header)).append(NEWLINE)
         table.rows.forEach { row ->
-            val cells = listOf(row.studentId.value, row.studentName) + row.acceptRatios + row.stats.map { it.label }
+            val cells = listOf(
+                row.studentId.value,
+                row.studentName
+            ) + row.acceptRatios + row.stats.map { it.label }
             append(line(cells)).append(NEWLINE)
         }
     }

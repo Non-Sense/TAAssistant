@@ -95,15 +95,23 @@ class CoreLogicTest {
             tasks: {}
             """.trimIndent(),
         )
-        assertEquals(SubmissionDirName("12345678", "山田"), named.parseSubmissionDirName("山田_12345678"))
+        assertEquals(
+            SubmissionDirName("12345678", "山田"),
+            named.parseSubmissionDirName("山田_12345678")
+        )
         assertNull(named.parseSubmissionDirName("山田_1234"))
 
         // 名前付きグループが無ければ 1番目 = 学籍番号, 2番目 = 氏名
-        val positional = ConfigParser.parse("version: 2\nsubmissionDirPattern: '(\\w+)-(.*)'\ntasks: {}")
-        assertEquals(SubmissionDirName("s01", "Alice"), positional.parseSubmissionDirName("s01-Alice"))
+        val positional =
+            ConfigParser.parse("version: 2\nsubmissionDirPattern: '(\\w+)-(.*)'\ntasks: {}")
+        assertEquals(
+            SubmissionDirName("s01", "Alice"),
+            positional.parseSubmissionDirName("s01-Alice")
+        )
 
         // 氏名グループは省略可能
-        val idOnly = ConfigParser.parse("version: 2\nsubmissionDirPattern: '(?<id>s\\d+)'\ntasks: {}")
+        val idOnly =
+            ConfigParser.parse("version: 2\nsubmissionDirPattern: '(?<id>s\\d+)'\ntasks: {}")
         assertEquals(SubmissionDirName("s01", ""), idOnly.parseSubmissionDirName("s01"))
     }
 
@@ -118,7 +126,10 @@ class CoreLogicTest {
     @Test
     fun parsesPackageName() {
         assertEquals("jp.ac.example", parsePackageName("\uFEFFpackage jp.ac.example;\nclass A {}"))
-        assertEquals("a.b", parsePackageName("/* header\npackage x.y;\n*/\npackage a.b ; // comment"))
+        assertEquals(
+            "a.b",
+            parsePackageName("/* header\npackage x.y;\n*/\npackage a.b ; // comment")
+        )
         assertNull(parsePackageName("// package x.y;\nclass A {}"))
     }
 
@@ -138,7 +149,13 @@ class CoreLogicTest {
 
         assertEquals(Judge.AC, AutoJudge.judge(test1, exec("sum\r\n45\r\n")))
         assertEquals(Judge.WA, AutoJudge.judge(test1, exec("145")))
-        assertEquals(Judge.RE, AutoJudge.judge(test1, exec("45", "Exception in thread \"main\" java.lang.RuntimeException")))
+        assertEquals(
+            Judge.RE,
+            AutoJudge.judge(
+                test1,
+                exec("45", "Exception in thread \"main\" java.lang.RuntimeException")
+            )
+        )
         assertEquals(Judge.TLE, AutoJudge.judge(test1, exec("45", timedOut = true)))
     }
 
@@ -154,11 +171,18 @@ class CoreLogicTest {
             Student(bob, "Bob", "/ws/b"),
             Student(carol, "Carol", "/ws/c"),
         )
+
         fun src(id: StudentId, name: String) = SourceFile(id, "/ws/$id/$name", "$id/sources/$name")
         val ok = CompileOutcome.Success("javac", SourceEncoding.UTF8, null, "A", "/c")
         val ng = CompileOutcome.Failure("javac", SourceEncoding.UTF8, null, "error")
         var id = 0
-        fun result(source: SourceFile, task: TaskName?, case: TestCase?, judge: Judge, compile: CompileOutcome = ok) =
+        fun result(
+            source: SourceFile,
+            task: TaskName?,
+            case: TestCase?,
+            judge: Judge,
+            compile: CompileOutcome = ok
+        ) =
             TestResult(id++, source, compile, task, case, judge)
 
         val results = listOf(
@@ -174,7 +198,17 @@ class CoreLogicTest {
         results[1] = results[1].copy(manualJudge = Judge.AC)
 
         val summary = buildSummary(config, students, results)
-        assertEquals(listOf("ID", "Name", "課題1", "課題2", "課題1:test1", "課題1:test2", "課題2:sample"), summary.header)
+        assertEquals(
+            listOf(
+                "ID",
+                "Name",
+                "課題1",
+                "課題2",
+                "課題1:test1",
+                "課題1:test2",
+                "課題2:sample"
+            ), summary.header
+        )
 
         val (a, b, c) = summary.rows
         assertEquals(listOf(100, 0), a.acceptRatios)

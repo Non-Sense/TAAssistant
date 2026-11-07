@@ -1,7 +1,6 @@
 package com.n0n5ense.taassistant.core.report
 
 import com.n0n5ense.taassistant.core.model.Judge
-import java.io.OutputStream
 import org.apache.poi.ss.usermodel.CellType
 import org.apache.poi.ss.usermodel.ConditionalFormattingThreshold
 import org.apache.poi.ss.usermodel.ExtendedColor
@@ -17,6 +16,7 @@ import org.apache.poi.xssf.usermodel.XSSFWorkbook
 import org.apache.xmlbeans.XmlObject
 import org.openxmlformats.schemas.spreadsheetml.x2006.main.CTCfRule
 import org.openxmlformats.schemas.spreadsheetml.x2006.main.CTDataBar
+import java.io.OutputStream
 
 /** Excel のセルに入る文字数の上限 (32767) より少し小さく切る */
 private const val MAX_CELL_TEXT = 32_000
@@ -39,7 +39,9 @@ internal object ExcelReportWriter {
         val wrapStyle = workbook.createCellStyle().apply { wrapText = true }
 
         sheet.createRow(0).let { row ->
-            DetailRow.header.forEachIndexed { i, title -> row.createCell(i, CellType.STRING).setCellValue(title) }
+            DetailRow.header.forEachIndexed { i, title ->
+                row.createCell(i, CellType.STRING).setCellValue(title)
+            }
         }
         rows.forEachIndexed { rowIndex, detail ->
             val row = sheet.createRow(rowIndex + 1)
@@ -67,7 +69,10 @@ internal object ExcelReportWriter {
             )
         }
         DetailRow.header.indices.forEach { col ->
-            if (col in DetailRow.wrapColumns) sheet.setColumnWidth(col, 60 * 256) else sheet.autoSizeColumn(col)
+            if (col in DetailRow.wrapColumns) sheet.setColumnWidth(
+                col,
+                60 * 256
+            ) else sheet.autoSizeColumn(col)
         }
     }
 
@@ -75,7 +80,9 @@ internal object ExcelReportWriter {
         val sheet = workbook.createSheet("Summary")
         val header = table.header
         sheet.createRow(0).let { row ->
-            header.forEachIndexed { i, title -> row.createCell(i, CellType.STRING).setCellValue(title) }
+            header.forEachIndexed { i, title ->
+                row.createCell(i, CellType.STRING).setCellValue(title)
+            }
         }
         table.rows.forEachIndexed { index, summary ->
             sheet.createRow(index + 1).apply {
@@ -85,7 +92,9 @@ internal object ExcelReportWriter {
                     createCell(2 + i, CellType.NUMERIC).setCellValue(ratio.toDouble())
                 }
                 summary.stats.forEachIndexed { i, judge ->
-                    createCell(2 + summary.acceptRatios.size + i, CellType.STRING).setCellValue(judge.label)
+                    createCell(2 + summary.acceptRatios.size + i, CellType.STRING).setCellValue(
+                        judge.label
+                    )
                 }
             }
         }
@@ -95,13 +104,24 @@ internal object ExcelReportWriter {
         val lastRow = table.rows.size
         val firstStatColumn = 2 + table.taskNames.size
         if (lastRow > 0 && table.columns.isNotEmpty()) {
-            sheet.setStatConditionalFormatting(CellRangeAddress(1, lastRow, firstStatColumn, header.lastIndex))
+            sheet.setStatConditionalFormatting(
+                CellRangeAddress(
+                    1,
+                    lastRow,
+                    firstStatColumn,
+                    header.lastIndex
+                )
+            )
         }
         if (lastRow > 0 && table.taskNames.isNotEmpty()) {
             val color = workbook.creationHelper.createExtendedColor().apply {
                 rgb = byteArrayOf(99, 142.toByte(), 198.toByte())
             }
-            applyDataBars(sheet.sheetConditionalFormatting, CellRangeAddress(1, lastRow, 2, firstStatColumn - 1), color)
+            applyDataBars(
+                sheet.sheetConditionalFormatting,
+                CellRangeAddress(1, lastRow, 2, firstStatColumn - 1),
+                color
+            )
         }
         header.indices.forEach { sheet.autoSizeColumn(it) }
     }
@@ -145,7 +165,11 @@ private fun XSSFSheet.setStatConditionalFormatting(range: CellRangeAddress) {
 }
 
 /** 0〜100 のグラデーションなしデータバー */
-private fun applyDataBars(formatting: SheetConditionalFormatting, region: CellRangeAddress, color: ExtendedColor) {
+private fun applyDataBars(
+    formatting: SheetConditionalFormatting,
+    region: CellRangeAddress,
+    color: ExtendedColor
+) {
     val rule = formatting.createConditionalFormattingRule(color)
     rule.dataBarFormatting.apply {
         minThreshold.rangeType = ConditionalFormattingThreshold.RangeType.NUMBER
@@ -158,7 +182,8 @@ private fun applyDataBars(formatting: SheetConditionalFormatting, region: CellRa
     runCatching {
         val dataBarFormatting = rule.dataBarFormatting
         if (dataBarFormatting is XSSFDataBarFormatting) {
-            val field = XSSFDataBarFormatting::class.java.getDeclaredField("_databar").apply { isAccessible = true }
+            val field = XSSFDataBarFormatting::class.java.getDeclaredField("_databar")
+                .apply { isAccessible = true }
             (field.get(dataBarFormatting) as CTDataBar).apply {
                 minLength = 0
                 maxLength = 100
@@ -183,14 +208,14 @@ private fun applyDataBars(formatting: SheetConditionalFormatting, region: CellRa
                 set(
                     XmlObject.Factory.parse(
                         """<x14:conditionalFormattings xmlns:x14="http://schemas.microsoft.com/office/spreadsheetml/2009/9/main">""" +
-                            """<x14:conditionalFormatting xmlns:xm="http://schemas.microsoft.com/office/excel/2006/main">""" +
-                            """<x14:cfRule type="dataBar" id="{00000000-000E-0000-0000-000001000000}">""" +
-                            """<x14:dataBar minLength="0" maxLength="100" gradient="false">""" +
-                            """<x14:cfvo type="num"><xm:f>0</xm:f></x14:cfvo>""" +
-                            """<x14:cfvo type="num"><xm:f>100</xm:f></x14:cfvo>""" +
-                            """</x14:dataBar></x14:cfRule>""" +
-                            """<xm:sqref>${region.formatAsString()}</xm:sqref>""" +
-                            """</x14:conditionalFormatting></x14:conditionalFormattings>""",
+                                """<x14:conditionalFormatting xmlns:xm="http://schemas.microsoft.com/office/excel/2006/main">""" +
+                                """<x14:cfRule type="dataBar" id="{00000000-000E-0000-0000-000001000000}">""" +
+                                """<x14:dataBar minLength="0" maxLength="100" gradient="false">""" +
+                                """<x14:cfvo type="num"><xm:f>0</xm:f></x14:cfvo>""" +
+                                """<x14:cfvo type="num"><xm:f>100</xm:f></x14:cfvo>""" +
+                                """</x14:dataBar></x14:cfRule>""" +
+                                """<xm:sqref>${region.formatAsString()}</xm:sqref>""" +
+                                """</x14:conditionalFormatting></x14:conditionalFormattings>""",
                     ),
                 )
                 uri = "{78C0D931-6437-407d-A8EE-F0AAD7539E65}"

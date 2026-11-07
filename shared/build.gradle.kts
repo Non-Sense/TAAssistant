@@ -27,6 +27,7 @@ kotlin {
         }
         jvmMain.dependencies {
             implementation(libs.poi.ooxml)
+            implementation(libs.filekit.dialogs)
             implementation(libs.kotlinx.coroutinesSwing)
         }
         jvmTest.dependencies {

@@ -82,13 +82,19 @@ internal fun LogScreen(state: UiState, onBack: () -> Unit) {
         }
         // 実行中は進み具合も出す
         (state.status as? RunStatus.Running)?.let { status ->
-            Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Column(
+                Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
                 Text(
                     status.stage.label + if (status.total > 0) "  ${status.completed} / ${status.total}" else "",
                     style = MaterialTheme.typography.bodyMedium,
                 )
                 if (status.total > 0) {
-                    LinearProgressIndicator(progress = { status.completed.toFloat() / status.total }, modifier = Modifier.fillMaxWidth())
+                    LinearProgressIndicator(
+                        progress = { status.completed.toFloat() / status.total },
+                        modifier = Modifier.fillMaxWidth()
+                    )
                 } else {
                     LinearProgressIndicator(Modifier.fillMaxWidth())
                 }
@@ -104,10 +110,25 @@ internal fun LogScreen(state: UiState, onBack: () -> Unit) {
 internal fun LogCounts(logs: List<LogLine>) {
     val warnings = logs.count { it.level == LogLevel.Warning }
     val errors = logs.count { it.level == LogLevel.Error }
-    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-        Text("${logs.size} 行", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        if (warnings > 0) Text("警告 $warnings", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.tertiary)
-        if (errors > 0) Text("エラー $errors", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.error)
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            "${logs.size} 行",
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        if (warnings > 0) Text(
+            "警告 $warnings",
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.tertiary
+        )
+        if (errors > 0) Text(
+            "エラー $errors",
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.error
+        )
     }
 }
 

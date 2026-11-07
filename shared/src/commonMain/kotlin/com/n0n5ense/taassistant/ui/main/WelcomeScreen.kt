@@ -38,14 +38,15 @@ internal fun WelcomeScreen(state: UiState, viewModel: AppViewModel, modifier: Mo
     Box(modifier.fillMaxSize()) {
         Box(Modifier.fillMaxSize().verticalScroll(scroll), contentAlignment = Alignment.TopCenter) {
             Column(
-                Modifier.widthIn(max = 640.dp).fillMaxWidth().padding(horizontal = 24.dp, vertical = 64.dp),
+                Modifier.widthIn(max = 640.dp).fillMaxWidth()
+                    .padding(horizontal = 24.dp, vertical = 64.dp),
                 verticalArrangement = Arrangement.spacedBy(24.dp),
             ) {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("TA Assistant", style = MaterialTheme.typography.headlineMedium)
                     Text(
                         "採点の設定・課題の割り当て・採点結果を、プロジェクトファイル (.${ProjectCodec.EXTENSION}) にまとめて保存します。" +
-                            "変更は自動で保存されます。",
+                                "変更は自動で保存されます。",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -58,15 +59,25 @@ internal fun WelcomeScreen(state: UiState, viewModel: AppViewModel, modifier: Mo
                         shape = MaterialTheme.shapes.medium,
                         modifier = Modifier.fillMaxWidth(),
                     ) {
-                        Row(Modifier.padding(start = 16.dp, end = 8.dp, top = 8.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Text(error, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+                        Row(
+                            Modifier.padding(start = 16.dp, end = 8.dp, top = 8.dp, bottom = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                error,
+                                style = MaterialTheme.typography.bodyMedium,
+                                modifier = Modifier.weight(1f)
+                            )
                             TextButton(onClick = viewModel::dismissProjectError) { Text("閉じる") }
                         }
                     }
                 }
 
                 if (state.loadingProject) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
                         CircularProgressIndicator(Modifier.padding(4.dp))
                         Text("プロジェクトを開いています…")
                     }
@@ -89,10 +100,26 @@ internal fun WelcomeScreen(state: UiState, viewModel: AppViewModel, modifier: Mo
                         state.recentProjects.forEach { path ->
                             val project = OpenProject(path)
                             ListItem(
-                                headlineContent = { Text(project.name, maxLines = 1, overflow = TextOverflow.Ellipsis) },
-                                supportingContent = { Text(path, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                                headlineContent = {
+                                    Text(
+                                        project.name,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                },
+                                supportingContent = {
+                                    Text(
+                                        path,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                },
                                 colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-                                modifier = Modifier.clickable(enabled = !state.loadingProject) { viewModel.openProject(path) },
+                                modifier = Modifier.clickable(enabled = !state.loadingProject) {
+                                    viewModel.openProject(
+                                        path
+                                    )
+                                },
                             )
                         }
                     }

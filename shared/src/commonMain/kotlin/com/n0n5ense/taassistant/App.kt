@@ -97,7 +97,8 @@ fun App(
             }
             // プロジェクトを切り替えたら採点画面から始める
             val backStack = remember(project.path) { mutableStateListOf<Screen>(Screen.Grading) }
-            val back: () -> Unit = { if (backStack.size > 1) backStack.removeAt(backStack.lastIndex) }
+            val back: () -> Unit =
+                { if (backStack.size > 1) backStack.removeAt(backStack.lastIndex) }
 
             fun open(screen: Screen) {
                 if (backStack.last() != screen) backStack.add(screen)
@@ -161,21 +162,22 @@ fun App(
                             return@entry
                         }
                         val student = students[index]
+
                         // 前後の学生へは、履歴を増やさずに切り替える
                         fun switchTo(other: com.n0n5ense.taassistant.core.model.Student) {
                             backStack[backStack.lastIndex] = Screen.Student(other.id)
                         }
                         StudentScreen(
                             student = student,
-                            outcome = outcome,
-                            results = state.results,
-                            viewModel = viewModel(key = "student:${student.id.value}") { StudentViewModel(services, student) },
-                            onBack = back,
-                            onOpenResult = { id ->
-                                appViewModel.select(id)
-                                tab = MainTab.Details
-                                back()
+                            state = state,
+                            appViewModel = appViewModel,
+                            viewModel = viewModel(key = "student:${student.id.value}") {
+                                StudentViewModel(
+                                    services,
+                                    student
+                                )
                             },
+                            onBack = back,
                             onPrevious = students.getOrNull(index - 1)?.let { { switchTo(it) } },
                             onNext = students.getOrNull(index + 1)?.let { { switchTo(it) } },
                         )

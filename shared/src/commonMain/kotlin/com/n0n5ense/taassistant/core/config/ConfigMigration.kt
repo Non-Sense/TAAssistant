@@ -3,6 +3,7 @@ package com.n0n5ense.taassistant.core.config
 import com.charleskorn.kaml.Yaml
 import com.charleskorn.kaml.YamlMap
 import com.charleskorn.kaml.YamlScalar
+import com.n0n5ense.taassistant.core.config.ConfigMigrator.steps
 
 /** 古いバージョンのコンフィグを現在の形式に変換した結果 */
 data class ConfigMigration(
@@ -17,7 +18,7 @@ data class ConfigMigration(
 /** 古いバージョンのため、そのままでは読み込めないコンフィグ */
 class LegacyConfigException(val version: Int) : IllegalArgumentException(
     "古い形式のコンフィグです (version: $version、現在は ${Config.CURRENT_VERSION})。" +
-        "「コンフィグ編集」で開くと新しい形式に変換できます。",
+            "「コンフィグ編集」で開くと新しい形式に変換できます。",
 )
 
 /**
@@ -31,13 +32,18 @@ object ConfigMigrator {
     private const val UNVERSIONED = 1
 
     /** バージョン [from] → [from] + 1 の変換 */
-    private class Step(val from: Int, val apply: (root: YamlMap, notes: MutableList<String>) -> YamlMap)
+    private class Step(
+        val from: Int,
+        val apply: (root: YamlMap, notes: MutableList<String>) -> YamlMap
+    )
 
     private val steps = listOf(
         Step(from = 1) { root, notes ->
-            val disablePackage = root.entries.entries.firstOrNull { it.key.content == "disablePackage" }
+            val disablePackage =
+                root.entries.entries.firstOrNull { it.key.content == "disablePackage" }
             if (disablePackage != null) {
-                val enabled = (disablePackage.value as? YamlScalar)?.content?.toBooleanStrictOrNull() == true
+                val enabled =
+                    (disablePackage.value as? YamlScalar)?.content?.toBooleanStrictOrNull() == true
                 notes += if (enabled) {
                     "disablePackage: true を削除しました。workspace の初期化は、設定パネルの「実行前に workspace を初期化する」で指定してください。"
                 } else {
@@ -60,7 +66,8 @@ object ConfigMigrator {
      */
     fun detectVersion(yamlText: String): Int? {
         val root = parseRoot(yamlText) ?: return null
-        val node = root.entries.entries.firstOrNull { it.key.content == VERSION_KEY }?.value ?: return UNVERSIONED
+        val node = root.entries.entries.firstOrNull { it.key.content == VERSION_KEY }?.value
+            ?: return UNVERSIONED
         return (node as? YamlScalar)?.content?.toIntOrNull()
             ?: throw IllegalArgumentException("version は整数で指定してください")
     }

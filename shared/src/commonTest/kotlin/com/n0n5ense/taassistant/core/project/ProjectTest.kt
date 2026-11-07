@@ -14,7 +14,6 @@ import com.n0n5ense.taassistant.core.model.SourceFile
 import com.n0n5ense.taassistant.core.model.Student
 import com.n0n5ense.taassistant.core.model.StudentId
 import com.n0n5ense.taassistant.core.model.TestResult
-import com.n0n5ense.taassistant.core.report.Csv
 import com.n0n5ense.taassistant.core.report.ReportFormat
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -41,12 +40,19 @@ class ProjectTest {
     private val student = Student(StudentId("s1"), "山田", "/w/s1")
     private val main = SourceFile(student.id, "/w/s1/sources/Main.java", "s1/sources/Main.java")
     private val other = SourceFile(student.id, "/w/s1/sources/Other.java", "s1/sources/Other.java")
-    private val success = CompileOutcome.Success("javac", SourceEncoding.UTF8, "pkg", "Main", "/w/s1/compile")
+    private val success =
+        CompileOutcome.Success("javac", SourceEncoding.UTF8, "pkg", "Main", "/w/s1/compile")
     private val failure = CompileOutcome.Failure("javac", null, null, "error: x")
     private val t1 = config.tasks.getValue(TaskName("課題1")).testcase[0]
     private val t2 = config.tasks.getValue(TaskName("課題1")).testcase[1]
 
-    private fun result(id: Int, source: SourceFile, testCase: TestCase?, judge: Judge, manual: Judge? = null) = TestResult(
+    private fun result(
+        id: Int,
+        source: SourceFile,
+        testCase: TestCase?,
+        judge: Judge,
+        manual: Judge? = null
+    ) = TestResult(
         id = id,
         source = source,
         compile = success,
@@ -73,8 +79,17 @@ class ProjectTest {
             results = results,
         )
         val project = ProjectFile(
-            settings = ProjectSettings(rootDir = "submissions", configPath = "config.yaml", reportFormat = ReportFormat.Csv),
-            assignments = listOf(TaskAssignment("s1/sources/Other.java", listOf(TaskName("課題1")))),
+            settings = ProjectSettings(
+                rootDir = "submissions",
+                configPath = "config.yaml",
+                reportFormat = ReportFormat.Csv
+            ),
+            assignments = listOf(
+                TaskAssignment(
+                    "s1/sources/Other.java",
+                    listOf(TaskName("課題1"))
+                )
+            ),
             outcome = outcome,
         )
         val bytes = ProjectCodec.encode(project)
@@ -85,7 +100,9 @@ class ProjectTest {
         val decoded = ProjectCodec.decode(bytes)
         assertEquals(project, decoded)
         // 正規表現などの transient な値も復元される
-        assertEquals(listOf("^3$"), decoded.outcome!!.config.tasks.values.first().testcase[0].expectRegex.map { it.pattern })
+        assertEquals(
+            listOf("^3$"),
+            decoded.outcome!!.config.tasks.values.first().testcase[0].expectRegex.map { it.pattern })
         // 圧縮していない JSON (BOM 付きでも) も読める
         assertEquals(project, ProjectCodec.decode(json.encodeToByteArray()))
         assertEquals(project, ProjectCodec.decode((Char(0xFEFF) + json).encodeToByteArray()))
@@ -97,7 +114,17 @@ class ProjectTest {
         assertFailsWith<IllegalArgumentException> { decode("not json") }
         assertFailsWith<IllegalArgumentException> { decode("""{"format": "other", "version": 1}""") }
         // 壊れた gzip
-        assertFailsWith<IllegalArgumentException> { ProjectCodec.decode(byteArrayOf(0x1f, 0x8b.toByte(), 1, 2, 3)) }
+        assertFailsWith<IllegalArgumentException> {
+            ProjectCodec.decode(
+                byteArrayOf(
+                    0x1f,
+                    0x8b.toByte(),
+                    1,
+                    2,
+                    3
+                )
+            )
+        }
         val newer = assertFailsWith<IllegalArgumentException> {
             decode("""{"format": "${ProjectCodec.FORMAT}", "version": 99}""")
         }

@@ -68,7 +68,8 @@ data class GradingOutcome(
 class GradingPipeline(private val toolkit: GradingToolkit) {
 
     suspend fun run(request: GradingRequest, onEvent: (PipelineEvent) -> Unit): GradingOutcome {
-        fun log(message: String, level: LogLevel = LogLevel.Info) = onEvent(PipelineEvent.Log(message, level))
+        fun log(message: String, level: LogLevel = LogLevel.Info) =
+            onEvent(PipelineEvent.Log(message, level))
 
         // ---- 準備
         onEvent(PipelineEvent.Progress(Stage.Prepare, 0, 0))
@@ -82,9 +83,10 @@ class GradingPipeline(private val toolkit: GradingToolkit) {
 
         // ---- 展開
         onEvent(PipelineEvent.Progress(Stage.Extract, 0, 0))
-        val students = toolkit.extractSubmissions(request.rootDir, workspace, config::parseSubmissionDirName) {
-            log(it, LogLevel.Warning)
-        }
+        val students =
+            toolkit.extractSubmissions(request.rootDir, workspace, config::parseSubmissionDirName) {
+                log(it, LogLevel.Warning)
+            }
         if (students.isEmpty()) {
             log(
                 "submissionDirPattern (${config.submissionDirPattern}) に一致する提出ディレクトリが見つかりませんでした",
@@ -93,17 +95,28 @@ class GradingPipeline(private val toolkit: GradingToolkit) {
         }
         log("${students.size} 人分の提出を展開しました")
         if (request.lastStep == LastStep.Extract) {
-            return GradingOutcome(config, workspace, request.lastStep, students, emptyList(), emptyList())
+            return GradingOutcome(
+                config,
+                workspace,
+                request.lastStep,
+                students,
+                emptyList(),
+                emptyList()
+            )
         }
 
         // ---- コンパイル
-        val sources = students.flatMap { student -> toolkit.findSources(student).map { student to it } }
+        val sources =
+            students.flatMap { student -> toolkit.findSources(student).map { student to it } }
         onEvent(PipelineEvent.Progress(Stage.Compile, 0, sources.size))
         val compiled = sources.mapConcurrently(
             parallelism = request.compileParallelism,
             onProgress = { onEvent(PipelineEvent.Progress(Stage.Compile, it, sources.size)) },
         ) { (student, source) ->
-            CompiledSource(source, toolkit.compile(source, student, request.toolchain, config.compileTimeout))
+            CompiledSource(
+                source,
+                toolkit.compile(source, student, request.toolchain, config.compileTimeout)
+            )
         }
         val compileFailures = compiled.count { it.outcome !is CompileOutcome.Success }
         log("${compiled.size} ファイルをコンパイルしました (失敗 $compileFailures 件)")
@@ -111,16 +124,27 @@ class GradingPipeline(private val toolkit: GradingToolkit) {
             log("${it.source.displayPath}: コンパイル時に内部エラーが発生しました", LogLevel.Error)
         }
         if (request.lastStep == LastStep.Compile) {
-            return GradingOutcome(config, workspace, request.lastStep, students, compiled, emptyList())
+            return GradingOutcome(
+                config,
+                workspace,
+                request.lastStep,
+                students,
+                compiled,
+                emptyList()
+            )
         }
 
         // ---- テスト
         request.assignments.forEach { (path, tasks) ->
             tasks.filter { it !in config.tasks }.forEach { task ->
-                log("$path: 割り当てた課題「$task」がコンフィグにないため無視します", LogLevel.Warning)
+                log(
+                    "$path: 割り当てた課題「$task」がコンフィグにないため無視します",
+                    LogLevel.Warning
+                )
             }
         }
-        val plans = compiled.flatMap { planTests(config, it, request.assignments[it.source.displayPath]) }
+        val plans =
+            compiled.flatMap { planTests(config, it, request.assignments[it.source.displayPath]) }
         onEvent(PipelineEvent.Progress(Stage.Test, 0, plans.size))
         val results = plans.mapConcurrently(
             parallelism = request.testParallelism,
@@ -129,7 +153,8 @@ class GradingPipeline(private val toolkit: GradingToolkit) {
             .mapIndexed { index, result -> result.copy(id = index) }
 
         val counts = results.groupingBy { it.judge }.eachCount()
-        log("テスト完了: " + Judge.entries.filter { it in counts }.joinToString("  ") { "$it ${counts[it]}" })
+        log("テスト完了: " + Judge.entries.filter { it in counts }
+            .joinToString("  ") { "$it ${counts[it]}" })
         return GradingOutcome(config, workspace, request.lastStep, students, compiled, results)
     }
 
@@ -144,7 +169,13 @@ class GradingPipeline(private val toolkit: GradingToolkit) {
         toolchain: JavaToolchain,
         parallelism: Int,
     ): List<TestResult> =
-        planTests(config, compiled, tasks).mapConcurrently(parallelism, onProgress = {}) { runTest(it, toolchain, config.runningTimeout) }
+        planTests(config, compiled, tasks).mapConcurrently(parallelism, onProgress = {}) {
+            runTest(
+                it,
+                toolchain,
+                config.runningTimeout
+            )
+        }
 
     private class TestPlan(
         val compiled: CompiledSource,
@@ -156,7 +187,11 @@ class GradingPipeline(private val toolkit: GradingToolkit) {
     )
 
     /** [assigned] があれば、ソースの内容から判定する代わりにその課題としてテストする */
-    private suspend fun planTests(config: Config, compiled: CompiledSource, assigned: List<TaskName>? = null): List<TestPlan> {
+    private suspend fun planTests(
+        config: Config,
+        compiled: CompiledSource,
+        assigned: List<TaskName>? = null
+    ): List<TestPlan> {
         val outcome = compiled.outcome
         val assignedTasks = assigned?.filter { it in config.tasks }?.takeIf { it.isNotEmpty() }
         if (assignedTasks != null) return plansFor(config, compiled, assignedTasks, assigned = true)
@@ -168,24 +203,68 @@ class GradingPipeline(private val toolkit: GradingToolkit) {
             ""
         }
         val tasks = detectTasks(config, text)
-        if (tasks.isEmpty()) return listOf(TestPlan(compiled, null, null, Judge.NF, assigned = false))
+        if (tasks.isEmpty()) return listOf(
+            TestPlan(
+                compiled,
+                null,
+                null,
+                Judge.NF,
+                assigned = false
+            )
+        )
         return plansFor(config, compiled, tasks, assigned = false)
     }
 
-    private fun plansFor(config: Config, compiled: CompiledSource, tasks: List<TaskName>, assigned: Boolean): List<TestPlan> {
+    private fun plansFor(
+        config: Config,
+        compiled: CompiledSource,
+        tasks: List<TaskName>,
+        assigned: Boolean
+    ): List<TestPlan> {
         val outcome = compiled.outcome
         return tasks.flatMap { taskName ->
             val testCases = config.tasks.getValue(taskName).testcase
             when {
-                outcome is CompileOutcome.Error -> listOf(TestPlan(compiled, taskName, null, Judge.IE, assigned))
-                outcome is CompileOutcome.Failure -> listOf(TestPlan(compiled, taskName, null, Judge.CE, assigned))
-                testCases.isEmpty() -> listOf(TestPlan(compiled, taskName, null, Judge.Unknown, assigned))
+                outcome is CompileOutcome.Error -> listOf(
+                    TestPlan(
+                        compiled,
+                        taskName,
+                        null,
+                        Judge.IE,
+                        assigned
+                    )
+                )
+
+                outcome is CompileOutcome.Failure -> listOf(
+                    TestPlan(
+                        compiled,
+                        taskName,
+                        null,
+                        Judge.CE,
+                        assigned
+                    )
+                )
+
+                testCases.isEmpty() -> listOf(
+                    TestPlan(
+                        compiled,
+                        taskName,
+                        null,
+                        Judge.Unknown,
+                        assigned
+                    )
+                )
+
                 else -> testCases.map { TestPlan(compiled, taskName, it, null, assigned) }
             }
         }
     }
 
-    private suspend fun runTest(plan: TestPlan, toolchain: JavaToolchain, timeoutMillis: Long): TestResult {
+    private suspend fun runTest(
+        plan: TestPlan,
+        toolchain: JavaToolchain,
+        timeoutMillis: Long
+    ): TestResult {
         val base = TestResult(
             id = 0,
             source = plan.compiled.source,

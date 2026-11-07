@@ -41,11 +41,13 @@ fun splitArguments(line: String): List<String> {
                 inQuote = true
                 inToken = true
             }
+
             c.isWhitespace() -> if (inToken) {
                 args += current.toString()
                 current.clear()
                 inToken = false
             }
+
             else -> {
                 current.append(c)
                 inToken = true

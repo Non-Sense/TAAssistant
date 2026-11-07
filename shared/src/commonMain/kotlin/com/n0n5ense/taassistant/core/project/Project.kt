@@ -77,7 +77,10 @@ object ProjectCodec {
             try {
                 gunzip(bytes).decodeToString()
             } catch (e: Exception) {
-                throw IllegalArgumentException("プロジェクトファイルが壊れています (展開できません): ${e.message}", e)
+                throw IllegalArgumentException(
+                    "プロジェクトファイルが壊れています (展開できません): ${e.message}",
+                    e
+                )
             }
         } else {
             bytes.decodeToString()
@@ -89,7 +92,10 @@ object ProjectCodec {
         val element = try {
             json.parseToJsonElement(text.removePrefix(Char(0xFEFF).toString()))
         } catch (e: SerializationException) {
-            throw IllegalArgumentException("プロジェクトファイルとして読み込めません (JSON の形式が正しくありません): ${e.message}", e)
+            throw IllegalArgumentException(
+                "プロジェクトファイルとして読み込めません (JSON の形式が正しくありません): ${e.message}",
+                e
+            )
         }
         val root = element as? JsonObject
             ?: throw IllegalArgumentException("プロジェクトファイルとして読み込めません")
@@ -99,14 +105,20 @@ object ProjectCodec {
             ?: throw IllegalArgumentException("プロジェクトファイルの version がありません")
         require(version <= CURRENT_VERSION) {
             "このプロジェクトファイル (version: $version) はより新しいバージョンのアプリで作られています。" +
-                "このアプリが対応しているのは version: $CURRENT_VERSION までです。"
+                    "このアプリが対応しているのは version: $CURRENT_VERSION までです。"
         }
         return try {
             json.decodeFromJsonElement(ProjectFile.serializer(), root)
         } catch (e: SerializationException) {
-            throw IllegalArgumentException("プロジェクトファイルの内容が正しくありません: ${e.message}", e)
+            throw IllegalArgumentException(
+                "プロジェクトファイルの内容が正しくありません: ${e.message}",
+                e
+            )
         } catch (e: IllegalArgumentException) {
-            throw IllegalArgumentException("プロジェクトファイルの内容が正しくありません: ${e.message}", e)
+            throw IllegalArgumentException(
+                "プロジェクトファイルの内容が正しくありません: ${e.message}",
+                e
+            )
         }
     }
 }
@@ -116,7 +128,10 @@ object ProjectCodec {
 private fun List<TestResult>.nextId(): Int = (maxOfOrNull { it.id } ?: -1) + 1
 
 /** NF の結果 [notFound] を、課題を割り当てて実行した結果 [assigned] に置き換える (id は振り直す) */
-fun List<TestResult>.replaceWithAssigned(notFound: TestResult, assigned: List<TestResult>): List<TestResult> {
+fun List<TestResult>.replaceWithAssigned(
+    notFound: TestResult,
+    assigned: List<TestResult>
+): List<TestResult> {
     val index = indexOfFirst { it.id == notFound.id }
     require(index >= 0) { "結果が見つかりません" }
     var id = nextId()
@@ -146,7 +161,10 @@ fun List<TestResult>.removeAssigned(source: SourceFile): List<TestResult> {
  * 同じソース・同じ課題で、テストケースの内容 (名前・引数・入力・想定出力) が変わっていないものだけを引き継ぐ。
  * @return 引き継いだ結果と、引き継いだ件数
  */
-fun carryOverManualJudges(previous: List<TestResult>, current: List<TestResult>): Pair<List<TestResult>, Int> {
+fun carryOverManualJudges(
+    previous: List<TestResult>,
+    current: List<TestResult>
+): Pair<List<TestResult>, Int> {
     fun key(r: TestResult) = Triple(r.source.displayPath, r.taskName, r.testCase)
     val manual = previous.filter { it.manualJudge != null }.associate { key(it) to it.manualJudge }
     if (manual.isEmpty()) return current to 0
