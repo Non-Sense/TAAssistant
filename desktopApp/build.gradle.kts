@@ -23,7 +23,8 @@ compose.desktop {
             // 実行するには OS ごとにその OS で作る (jpackage は他の OS 向けには作れない)
             targetFormats(TargetFormat.Msi, TargetFormat.Exe, TargetFormat.Dmg, TargetFormat.Deb)
             packageName = "TAAssistant"
-            packageVersion = "1.0.0"
+            // CI では -PappVersion=1.0.<実行番号> を渡す
+            packageVersion = (findProperty("appVersion") as String?) ?: "1.0.0"
             description = "Java の課題の採点を補助するツール"
             vendor = "n0n5ense"
 
